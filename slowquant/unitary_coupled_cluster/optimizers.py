@@ -15,6 +15,9 @@ class Result:
         """Initialize result class."""
         self.x: np.ndarray
         self.fun: float
+        self.fun_evals: int | None = None
+        self.grad_evals: int | None = None # None for non-gradient based optimisation
+        self.niter: int | None = None
 
 
 class Optimizers:
@@ -90,6 +93,8 @@ class Optimizers:
         self._start = time.time()
         self._iteration = 0
         print_progress = partial(self._print_progress, fun=self.fun, silent=self.is_silent)
+        result = Result()
+        
         if self.method in ("bfgs", "l-bfgs-b", "slsqp"):
             if self.grad is not None:
                 res = scipy.optimize.minimize(
@@ -110,6 +115,9 @@ class Optimizers:
                     callback=print_progress,
                     options={"maxiter": self.maxiter, "disp": True},
                 )
+            result.niter = res.nit
+            result.fun_evals = res.nfev
+            result.grad_evals = res.njev
         elif self.method in ("cobyla", "cobyqa"):
             res = scipy.optimize.minimize(
                 self.fun,
@@ -119,6 +127,7 @@ class Optimizers:
                 callback=print_progress,
                 options={"maxiter": self.maxiter, "disp": True},
             )
+            result.fun_evals = res.nfev
         elif self.method in ("rotosolve",):
             if not isinstance(extra_options, dict):
                 raise TypeError("extra_options is not set, but is required for RotoSolve")
@@ -136,10 +145,8 @@ class Optimizers:
                 callback=print_progress,
             )
             res = optimizer.minimize(self.fun, x0)
-
         else:
             raise ValueError(f"Got an unkonwn optimizer {self.method}")
-        result = Result()
         result.x = res.x
         result.fun = res.fun
         if not res.success:

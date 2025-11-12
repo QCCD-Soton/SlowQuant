@@ -251,6 +251,8 @@ class WaveFunctionUPS:
             raise ValueError(f"Got unknown ansatz, {ansatz}")
         self._thetas = np.zeros(self.ups_layout.n_params).tolist()
 
+        self.niter:int = 0
+
     @property
     def kappa(self) -> list[float]:
         """Get orbital rotation parameters."""
@@ -935,6 +937,9 @@ class WaveFunctionUPS:
         else:
             self.thetas = res.x.tolist()
         self._energy_elec = res.fun
+        self.niter = res.niter if res.niter != None else 0
+        self.fun_evals = res.fun_evals if res.fun_evals != None else 0
+        self.grad_evals = res.grad_evals if res.grad_evals != None else 0
 
     def _calc_energy_optimization(
         self, parameters: list[float], theta_optimization: bool, kappa_optimization: bool
