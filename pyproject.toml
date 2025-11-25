@@ -1,3 +1,6 @@
+[pytest]
+testpaths = ["./tests/"]
+
 [tool.ruff]
 line-length = 110
 indent-width = 4
