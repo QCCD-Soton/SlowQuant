@@ -1,6 +1,6 @@
 numba
 numpy
-qiskit
+qiskit==2.1
 qiskit-algorithms
 qiskit-nature
 scipy
