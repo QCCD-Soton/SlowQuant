@@ -551,18 +551,28 @@ class UpsStructure:
         self.grad_param_R: dict[str, int] = {}
         self.param_names: list[str] = []
 
-    def tups_tile(self,do_qnp:bool,q_index:int,layer:int, n_layers:int,skip_last_singles:bool,num_active_orbs:int) -> None:
-        p = q_index
+    def tups_tile(self,do_qnp:bool,spat_1:int,spat_2:int,layer:int, n_layers:int,skip_last_singles:bool,num_active_orbs:int) -> None:
+        """Creates a single tile for a tiled UPS anzatse.
+
+        Args:
+            do_qnp (bool): Do QNP tiling.
+            spat_1 (int): Index of spatial orbital of first half of tile.
+            spat_2 (int): Index of spatial orbital of second half of tile
+            layer (int): Current layer.
+            n_layers (int): Number of layers. 
+            skip_last_singles (bool): Skip last layer of singles operators.
+            num_active_orbs (int): Number of active orbitals.
+        """
         if not do_qnp:
             # First single
             self.excitation_operator_type.append("sa_single")
-            self.excitation_indices.append((p, p + 1)) # spatial basis  
+            self.excitation_indices.append((spat_1, spat_2)) # spatial basis  
             self.grad_param_R[f"p{self.n_params:09d}"] = 4
             self.param_names.append(f"p{self.n_params:09d}")
             self.n_params += 1
         # Double
         self.excitation_operator_type.append("double")
-        self.excitation_indices.append((2 * p, 2 * p + 1, 2 * p + 2, 2 * p + 3)) #spin basis
+        self.excitation_indices.append((2 * spat_1, 2 * spat_1 + 1, 2 * spat_2, 2 * spat_2+1)) #spin basis
         self.grad_param_R[f"p{self.n_params:09d}"] = 2
         self.param_names.append(f"p{self.n_params:09d}")
         self.n_params += 1
@@ -573,7 +583,7 @@ class UpsStructure:
             # the last single excitation is earlier than expected.
             return
         self.excitation_operator_type.append("sa_single")
-        self.excitation_indices.append((p, p + 1))
+        self.excitation_indices.append((spat_1, spat_2))
         self.grad_param_R[f"p{self.n_params:09d}"] = 4
         self.param_names.append(f"p{self.n_params:09d}")
         self.n_params += 1
@@ -588,6 +598,7 @@ class UpsStructure:
             * n_layers [int]: Number of layers.
             * do_qnp [bool]: Do QNP tiling. (default: False)
             * skip_last_singles [bool]: Skip last layer of singles operators. (default: False)
+            * tile_shifted [list(str)]: List of tile-shifted layers to include. eg "NN", "NNN", "NNNN" etc... 
 
         Args:
             num_active_orbs: Number of spatial active orbitals.
@@ -597,13 +608,12 @@ class UpsStructure:
             tUPS ansatz.
         """
         # Options
-        valid_options = ("n_layers", "do_qnp", "skip_last_singles")
+        valid_options = ("n_layers", "do_qnp", "skip_last_singles","tile_shifted")
         for option in ansatz_options:
             if option not in valid_options:
                 raise ValueError(f"Got unknown option for tUPS, {option}. Valid options are: {valid_options}")
-        if "n_layers" not in ansatz_options.keys(): 
-            raise ValueError("tUPS require the option 'n_layers'")
-        n_layers = ansatz_options["n_layers"]
+        if "n_layers" not in ansatz_options.keys() and "tile_shifted" not in ansatz_options.keys(): 
+            raise ValueError("tUPS require the option 'n_layers' or a list of tile_shifted layers")
         if "do_qnp" in ansatz_options.keys():
             do_qnp = ansatz_options["do_qnp"]
         else:
@@ -612,12 +622,37 @@ class UpsStructure:
             skip_last_singles = ansatz_options["skip_last_singles"]
         else:
             skip_last_singles = False
-        # Layer loop
-        for n in range(n_layers):
-            for p in range(0, num_active_orbs - 1, 2):  # first column of brick-wall
-                self.tups_tile(do_qnp,p,n,n_layers,skip_last_singles,num_active_orbs)
-            for p in range(1, num_active_orbs - 1, 2):  # second column of brick-wall
-                self.tups_tile(do_qnp,p,n,n_layers,skip_last_singles,num_active_orbs)
+        # Layer loop for regular tUPS
+        if "n_layers" in ansatz_options.keys():
+            n_layers = ansatz_options["n_layers"]
+            for n in range(n_layers):
+                for p in range(0, num_active_orbs - 1, 2):  # first column of brick-wall
+                    self.tups_tile(do_qnp,p,p+1,n,n_layers,skip_last_singles,num_active_orbs)
+                for p in range(1, num_active_orbs - 1, 2):  # second column of brick-wall
+                    self.tups_tile(do_qnp,p,p+1,n,n_layers,skip_last_singles,num_active_orbs)
+        # Tile_shifted UPS
+        if "tile_shifted" in ansatz_options.keys():
+            layers = ansatz_options["tile_shifted"]
+            n = 0
+            n_layers = len(layers)
+            for layer in layers:
+                match layer:
+                    case "NN":
+                        for p in range(0, num_active_orbs - 1, 2):  
+                            self.tups_tile(do_qnp,p,p+1,n,n_layers,skip_last_singles,num_active_orbs)
+                        for p in range(1, num_active_orbs - 1, 2):  
+                            self.tups_tile(do_qnp,p,p+1,n,n_layers,skip_last_singles,num_active_orbs)
+                    case "NNN":
+                        for p in range(0, num_active_orbs - 3, 4):
+                            self.tups_tile(do_qnp,p,p+2,n,n_layers,skip_last_singles,num_active_orbs)
+                        for p in range(2, num_active_orbs - 3, 4):
+                            self.tups_tile(do_qnp,p,p+2,n,n_layers,skip_last_singles,num_active_orbs)
+                    case "NNNN":
+                        for p in range(0, num_active_orbs - 5, 6):
+                            self.tups_tile(do_qnp,p,p+3,n,n_layers,skip_last_singles,num_active_orbs)
+                        for p in range(3, num_active_orbs - 5, 6):  
+                            self.tups_tile(do_qnp,p,p+3,n,n_layers,skip_last_singles,num_active_orbs)
+                n += 1
 
     def create_fUCC(self, num_orbs: int, num_elec: int, ansatz_options: dict[str, Any]) -> None:
         """Create factorized UCC ansatz.
