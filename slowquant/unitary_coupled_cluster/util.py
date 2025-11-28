@@ -646,6 +646,12 @@ class UpsStructure:
         print("Num active orbs: ", num_active_orbs)
         if "tile_shifted" in ansatz_options.keys():
             layers: list[int] = ansatz_options["tile_shifted"]
+
+            # If option is [0], will automaticall do as many neighbours as possible. (Equiv to full pair excitation
+            # full CI?)
+            if layers == [0]:
+                layers = [*range(1, num_active_orbs, 1)]
+
             max_nn = max(layers)
             if max_nn > (num_active_orbs - 1):
                 raise ValueError(
@@ -669,18 +675,13 @@ class UpsStructure:
                     skips = nn
                     tiles = 0
                     for p in range(0, num_active_orbs - nn, 1):
+                        # Ensures tiles interleave correctly
                         if count == nn and skips != 0:
                             skips -= 1
                             continue
-                        elif count == 2:
+                        elif count == nn:
                             count = 0
                             skips = nn
-
-                        if (p + nn) > (num_active_orbs - 1):
-                            break
-
-                        if tiles >= (num_active_orbs - 2):
-                            break
 
                         print("1. Tile Between SPATIAL orbitals: ", p, " and ", p + nn)
                         self.__tups_tile(do_qnp, p, p + nn, n, n_layers, skip_last_singles, num_active_orbs)
@@ -691,17 +692,14 @@ class UpsStructure:
                     skips = nn
                     tiles = 0
                     for p in range(nn, num_active_orbs - nn, 1):
+                        # Ensures tiles interleave correctly
                         if count == nn and skips != 0:
                             skips -= 1
                             continue
-                        elif count == 2:
+                        elif count == nn:
                             count = 0
                             skips = nn
-                        if (p + nn) > (num_active_orbs - 1):
-                            break
 
-                        if tiles >= (num_active_orbs - 2 - nn):
-                            break
                         print("2. Tile Between SPATIAL orbitals: ", p, " and ", p + nn)
                         self.__tups_tile(do_qnp, p, p + nn, n, n_layers, skip_last_singles, num_active_orbs)
                         tiles += 2
