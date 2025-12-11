@@ -743,6 +743,7 @@ class WaveFunctionUPS:
         tol: float = 1e-10,
         maxiter: int = 1000,
         is_silent_subiterations: bool = False,
+        basinhopping_options: dict | None = None,
     ) -> None:
         """Run two step optimization of wave function.
 
@@ -805,6 +806,18 @@ class WaveFunctionUPS:
                 )
             self.thetas = res.x.tolist()
 
+            if optimizer_name.lower() == "basinhopping":
+                res = optimizer.minimize(
+                    self.thetas,
+                    extra_options={
+                        "niter_basin": basinhopping_options["niter_basin"],
+                        "T_basin": basinhopping_options['T_basin'],
+                        "stepsize_basin": basinhopping_options['stepsize_basin'],
+                        "optimizer": basinhopping_options['optimizer'],
+                        "maxiter": basinhopping_options['maxiter_optimizer'] 
+                    },
+                )
+
             if orbital_optimization and len(self.kappa) != 0:
                 if not is_silent_subiterations:
                     print("--------Orbital optimization")
@@ -863,6 +876,7 @@ class WaveFunctionUPS:
         orbital_optimization: bool = False,
         tol: float = 1e-10,
         maxiter: int = 1000,
+        basinhopping_options: dict | None = None,
     ) -> None:
         """Run one step optimization of wave function.
 
@@ -943,10 +957,24 @@ class WaveFunctionUPS:
                     "f_rotosolve_optimized": self._calc_energy_rotosolve_optimization,
                 },
             )
+        elif optimizer_name.lower() == "basinhopping":
+            res = optimizer.minimize(
+                self.thetas,
+                extra_options={
+                    "niter_basin": basinhopping_options['niter_basin'],
+                    "T_basin": basinhopping_options['T_basin'],
+                    "stepsize_basin": basinhopping_options['stepsize_basin'],
+                    "optimizer": basinhopping_options['optimizer'],
+                    "maxiter": basinhopping_options['maxiter_optimizer'],
+                },
+            )
         else:
             res = optimizer.minimize(
                 parameters,
             )
+
+        
+        
         if orbital_optimization:
             self.thetas = res.x[len(self.kappa) :].tolist()
             for i in range(len(self.kappa)):

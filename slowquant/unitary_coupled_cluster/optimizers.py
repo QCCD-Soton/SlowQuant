@@ -111,6 +111,19 @@ class Optimizers:
                     callback=print_progress,
                     options={"maxiter": self.maxiter, "disp": True},
                 )
+        elif self.method in ("basinhopping"):
+            res = scipy.optimize.basinhopping(
+                self.fun,
+                x0,
+                niter = extra_options["niter_basin"],
+                T = extra_options["T_basin"], 
+                stepsize = extra_options["stepsize_basin"],
+                minimizer_kwargs={
+                    "method": extra_options["optimizer"], 
+                    "options": {"maxiter": extra_options['maxiter'], "disp": True}
+                }, # options for local minimizer
+                 
+            )
         elif self.method in ("cobyla", "cobyqa"):
             res = scipy.optimize.minimize(
                 self.fun,
