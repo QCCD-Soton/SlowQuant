@@ -182,6 +182,7 @@ class Optimizers:
         result.success = res.success
         if not result.success:
             print("Optimization failed.")
+            print(res.message) # "Describe cause of termination"
         return result
 
 
