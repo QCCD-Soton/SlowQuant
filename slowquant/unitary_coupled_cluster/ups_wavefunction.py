@@ -18,6 +18,7 @@ from slowquant.unitary_coupled_cluster.density_matrix import (
     get_electronic_energy,
     get_orbital_gradient,
 )
+from slowquant.unitary_coupled_cluster.fermionic_operator import FermionicOperator
 from slowquant.unitary_coupled_cluster.operator_state_algebra import (
     construct_ups_state,
     expectation_value,
@@ -30,7 +31,7 @@ from slowquant.unitary_coupled_cluster.operator_state_algebra import (
 from slowquant.unitary_coupled_cluster.operators import Epq, hamiltonian_0i_0a
 from slowquant.unitary_coupled_cluster.optimizers import Optimizers
 from slowquant.unitary_coupled_cluster.util import UpsStructure
-from slowquant.unitary_coupled_cluster.fermionic_operator import FermionicOperator
+
 
 class WaveFunctionUPS:
     def __init__(
@@ -722,8 +723,8 @@ class WaveFunctionUPS:
                 self.ci_info,
             )
         return self._energy_elec
-    
-    def _get_hamiltonian(self, qiskit_form: bool = False) -> FermionicOperator:
+
+    def _get_hamiltonian(self, qiskit_form: bool = False) -> FermionicOperator | dict[str, float]:
         """Return electronic Hamiltonian as FermionicOperator.
 
         Returns:
@@ -753,6 +754,7 @@ class WaveFunctionUPS:
             tol: Convergence tolerance.
             maxiter: Maximum number of iterations.
             is_silent_subiterations: Silence subiterations.
+            basinhopping_options: Additional arguments for minimizer wrapper.
         """
         print("### Parameters information:")
         if orbital_optimization:
@@ -807,14 +809,33 @@ class WaveFunctionUPS:
             self.thetas = res.x.tolist()
 
             if optimizer_name.lower() == "basinhopping":
+                if not isinstance(basinhopping_options, dict):
+                    raise TypeError("basinhopping_options is not set, but is required for basinhopping")
+                if "niter_basin" not in basinhopping_options:
+                    raise ValueError(
+                        f"Expected option 'niter_basin' in basinhopping_options, got {basinhopping_options.keys()}"
+                    )
+                if "T_basin" not in basinhopping_options:
+                    raise ValueError(
+                        f"Expected option 'param_names' in basinhopping_options, got {basinhopping_options.keys()}"
+                    )
+                if "stepsize_basin" not in basinhopping_options:
+                    raise ValueError(
+                        f"Expected option 'stepsize_basin' in basinhopping_options, got {basinhopping_options.keys()}"
+                    )
+                if "maxiter" not in basinhopping_options:
+                    raise ValueError(
+                        f"Expected option 'maxiter' in basinhopping_options, got {basinhopping_options.keys()}"
+                    )
+
                 res = optimizer.minimize(
                     self.thetas,
                     extra_options={
                         "niter_basin": basinhopping_options["niter_basin"],
-                        "T_basin": basinhopping_options['T_basin'],
-                        "stepsize_basin": basinhopping_options['stepsize_basin'],
-                        "optimizer": basinhopping_options['optimizer'],
-                        "maxiter": basinhopping_options['maxiter_optimizer'] 
+                        "T_basin": basinhopping_options["T_basin"],
+                        "stepsize_basin": basinhopping_options["stepsize_basin"],
+                        "optimizer": basinhopping_options["optimizer"],
+                        "maxiter": basinhopping_options["maxiter_optimizer"],
                     },
                 )
 
@@ -885,6 +906,7 @@ class WaveFunctionUPS:
             orbital_optimization: Perform orbital optimization.
             tol: Convergence tolerance.
             maxiter: Maximum number of iterations.
+            basinhopping_options: Additional arguments for minimizer wrapper.
         """
         print("### Parameters information:")
         if orbital_optimization:
@@ -958,23 +980,41 @@ class WaveFunctionUPS:
                 },
             )
         elif optimizer_name.lower() == "basinhopping":
+            if not isinstance(basinhopping_options, dict):
+                raise TypeError("basinhopping_options is not set, but is required for basinhopping")
+            if "niter_basin" not in basinhopping_options:
+                raise ValueError(
+                    f"Expected option 'niter_basin' in basinhopping_options, got {basinhopping_options.keys()}"
+                )
+            if "T_basin" not in basinhopping_options:
+                raise ValueError(
+                    f"Expected option 'param_names' in basinhopping_options, got {basinhopping_options.keys()}"
+                )
+            if "stepsize_basin" not in basinhopping_options:
+                raise ValueError(
+                    f"Expected option 'stepsize_basin' in basinhopping_options, got {basinhopping_options.keys()}"
+                )
+            if "maxiter" not in basinhopping_options:
+                raise ValueError(
+                    f"Expected option 'maxiter' in basinhopping_options, got {basinhopping_options.keys()}"
+                )
+
             res = optimizer.minimize(
                 self.thetas,
                 extra_options={
-                    "niter_basin": basinhopping_options['niter_basin'],
-                    "T_basin": basinhopping_options['T_basin'],
-                    "stepsize_basin": basinhopping_options['stepsize_basin'],
-                    "optimizer": basinhopping_options['optimizer'],
-                    "maxiter": basinhopping_options['maxiter_optimizer'],
+                    "niter_basin": basinhopping_options["niter_basin"],
+                    "T_basin": basinhopping_options["T_basin"],
+                    "stepsize_basin": basinhopping_options["stepsize_basin"],
+                    "optimizer": basinhopping_options["optimizer"],
+                    "maxiter": basinhopping_options["maxiter_optimizer"],
                 },
             )
+
         else:
             res = optimizer.minimize(
                 parameters,
             )
 
-        
-        
         if orbital_optimization:
             self.thetas = res.x[len(self.kappa) :].tolist()
             for i in range(len(self.kappa)):
