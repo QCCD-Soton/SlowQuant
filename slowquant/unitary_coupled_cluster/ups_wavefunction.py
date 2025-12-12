@@ -994,7 +994,7 @@ class WaveFunctionUPS:
                 raise ValueError(
                     f"Expected option 'stepsize_basin' in basinhopping_options, got {basinhopping_options.keys()}"
                 )
-            if "maxiter" not in basinhopping_options:
+            if "maxiter_optimizer" not in basinhopping_options:
                 raise ValueError(
                     f"Expected option 'maxiter' in basinhopping_options, got {basinhopping_options.keys()}"
                 )
