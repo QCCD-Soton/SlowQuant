@@ -112,17 +112,35 @@ class Optimizers:
                     options={"maxiter": self.maxiter, "disp": True},
                 )
         elif self.method in ("basinhopping"):
+            if not isinstance(extra_options, dict):
+                raise TypeError("extra_options is not set, but is required for basinhopping")
+            if "niter_basin" not in extra_options:
+                raise ValueError(
+                    f"Expected option 'niter_basin' in extra_options, got {extra_options.keys()}"
+                )
+            if "T_basin" not in extra_options:
+                raise ValueError(
+                    f"Expected option 'param_names' in extra_options, got {extra_options.keys()}"
+                )
+            if "stepsize_basin" not in extra_options:
+                raise ValueError(
+                    f"Expected option 'stepsize_basin' in extra_options, got {extra_options.keys()}"
+                )
+            if "maxiter" not in extra_options:
+                raise ValueError(f"Expected option 'maxiter' in extra_options, got {extra_options.keys()}")
             res = scipy.optimize.basinhopping(
                 self.fun,
                 x0,
-                niter = extra_options["niter_basin"],
-                T = extra_options["T_basin"], 
-                stepsize = extra_options["stepsize_basin"],
+                niter=extra_options["niter_basin"],
+                T=extra_options["T_basin"],
+                stepsize=extra_options["stepsize_basin"],
+                disp=True,
+                # Options for local minimizer
                 minimizer_kwargs={
-                    "method": extra_options["optimizer"], 
-                    "options": {"maxiter": extra_options['maxiter'], "disp": True}
-                }, # options for local minimizer
-                 
+                    "method": extra_options["optimizer"],
+                    "callback": print_progress,
+                    "options": {"maxiter": extra_options["maxiter"], "disp": True},
+                },
             )
         elif self.method in ("cobyla", "cobyqa"):
             res = scipy.optimize.minimize(
@@ -157,7 +175,7 @@ class Optimizers:
                 res = optimizer.minimize(self.fun, x0)
 
         else:
-            raise ValueError(f"Got an unkonwn optimizer {self.method}")
+            raise ValueError(f"Got an unknown optimizer {self.method}")
         result = Result()
         result.x = res.x
         result.fun = res.fun
