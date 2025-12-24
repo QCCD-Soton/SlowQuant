@@ -818,6 +818,7 @@ class WaveFunctionCircuit:
         tol: float = 1e-10,
         maxiter: int = 1000,
         is_silent_subiterations: bool = False,
+        print_std: bool = False,
     ) -> None:
         """Run two step optimization of wave function.
 
@@ -827,6 +828,7 @@ class WaveFunctionCircuit:
             tol: Convergence tolerance.
             maxiter: Maximum number of iterations.
             is_silent_subiterations: Silence subiterations.
+            print_std: Print std of electronic Hamiltonian during optimization.
         """
         if isinstance(self.QI.ansatz, QuantumCircuit) and optimizer_name.lower() not in ("cobyla", "cobyqa"):
             raise ValueError("Custom Ansatz in QI only works with COBYLA and COBYQA as optimizer.")
@@ -843,9 +845,11 @@ class WaveFunctionCircuit:
             # Do ansatz optimization
             if not is_silent_subiterations:
                 print("--------Ansatz optimization")
-                print(
-                    "--------Iteration # | Iteration time [s] | Electronic energy [Hartree] | Energy measurement #"
-                )
+                subheader = "--------Iteration # | Iteration time [s] | Electronic energy [Hartree] | Energy measurement #"
+                if print_std:
+                    subheader += " | Std(H)"
+                print(subheader)
+
             energy_theta = partial(
                 self._calc_energy_optimization,
                 theta_optimization=True,
@@ -864,6 +868,19 @@ class WaveFunctionCircuit:
                 tol=tol,
                 is_silent=is_silent_subiterations,
                 energy_eval_callback=lambda: self.num_energy_evals,
+                std_callback=(
+                    (
+                        lambda: self.QI.quantum_variance(
+                            hamiltonian_0i_0a(
+                                self.h_mo, self.g_mo, self.num_inactive_orbs, self.num_active_orbs
+                            ).get_folded_operator(
+                                self.num_inactive_orbs, self.num_active_orbs, self.num_virtual_orbs
+                            )
+                        )
+                    )
+                    if print_std
+                    else None
+                ),
             )
             res = optimizer.minimize(
                 self.thetas,
@@ -874,7 +891,11 @@ class WaveFunctionCircuit:
             if orbital_optimization and len(self.kappa) != 0:
                 if not is_silent_subiterations:
                     print("--------Orbital optimization")
-                    print("--------Iteration # | Iteration time [s] | Electronic energy [Hartree]")
+                    subheader = "--------Iteration # | Iteration time [s] | Electronic energy [Hartree] | Energy measurement #"
+                    if print_std:
+                        subheader += " | Std(H)"
+                    print(subheader)
+
                 energy_oo = partial(
                     self._calc_energy_optimization,
                     theta_optimization=False,
@@ -894,6 +915,19 @@ class WaveFunctionCircuit:
                     tol=tol,
                     is_silent=is_silent_subiterations,
                     energy_eval_callback=lambda: self.num_energy_evals,
+                    std_callback=(
+                        (
+                            lambda: self.QI.quantum_variance(
+                                hamiltonian_0i_0a(
+                                    self.h_mo, self.g_mo, self.num_inactive_orbs, self.num_active_orbs
+                                ).get_folded_operator(
+                                    self.num_inactive_orbs, self.num_active_orbs, self.num_virtual_orbs
+                                )
+                            )
+                        )
+                        if print_std
+                        else None
+                    ),
                 )
                 res = optimizer.minimize([0.0] * len(self.kappa_idx))
                 for i in range(len(self.kappa)):
@@ -925,6 +959,7 @@ class WaveFunctionCircuit:
         orbital_optimization: bool = False,
         tol: float = 1e-10,
         maxiter: int = 1000,
+        print_std: bool = False,
     ) -> None:
         """Run one step optimization of wave function.
 
@@ -933,6 +968,7 @@ class WaveFunctionCircuit:
             orbital_optimization: Perform orbital optimization.
             tol: Convergence tolerance.
             maxiter: Maximum number of iterations.
+            print_std: Print std in sub-iteration headers.
         """
         if isinstance(self.QI.ansatz, QuantumCircuit) and optimizer_name.lower() not in ("cobyla", "cobyqa"):
             raise ValueError("Custom Ansatz in QI only works with COBYLA and COBYQA as optimizer.")
@@ -946,7 +982,12 @@ class WaveFunctionCircuit:
                     "Cannot use RotoSolve together with orbital optimization in the one-step solver."
                 )
 
-        print("--------Iteration # | Iteration time [s] | Electronic energy [Hartree] | Energy measurement #")
+        header = (
+            "--------Iteration # | Iteration time [s] | Electronic energy [Hartree] | Energy measurement #"
+        )
+        if print_std:
+            header += " | Std(H)"
+        print(header)
         if orbital_optimization:
             if len(self.thetas) > 0:
                 energy = partial(
@@ -995,6 +1036,19 @@ class WaveFunctionCircuit:
             maxiter=maxiter,
             tol=tol,
             energy_eval_callback=lambda: self.num_energy_evals,
+            std_callback=(
+                (
+                    lambda: self.QI.quantum_variance(
+                        hamiltonian_0i_0a(
+                            self.h_mo, self.g_mo, self.num_inactive_orbs, self.num_active_orbs
+                        ).get_folded_operator(
+                            self.num_inactive_orbs, self.num_active_orbs, self.num_virtual_orbs
+                        )
+                    )
+                )
+                if print_std
+                else None
+            ),
         )
         res = optimizer.minimize(
             parameters, extra_options={"R": self.QI.grad_param_R, "param_names": self.QI.param_names}
