@@ -827,7 +827,10 @@ class WaveFunctionUPS:
                     raise ValueError(
                         f"Expected option 'maxiter' in basinhopping_options, got {basinhopping_options.keys()}"
                     )
-
+                if "niter_success" not in basinhopping_options:
+                    raise ValueError(
+                        f"Expected option 'niter_success' in basinhopping_options, got {basinhopping_options.keys()}"
+                    )
                 res = optimizer.minimize(
                     self.thetas,
                     extra_options={
@@ -836,6 +839,7 @@ class WaveFunctionUPS:
                         "stepsize_basin": basinhopping_options["stepsize_basin"],
                         "optimizer": basinhopping_options["optimizer"],
                         "maxiter": basinhopping_options["maxiter_optimizer"],
+                        "niter_success":basinhopping_options['niter_success'],
                     },
                 )
 
@@ -998,7 +1002,10 @@ class WaveFunctionUPS:
                 raise ValueError(
                     f"Expected option 'maxiter' in basinhopping_options, got {basinhopping_options.keys()}"
                 )
-
+            if "niter_success" not in basinhopping_options:
+                    raise ValueError(
+                        f"Expected option 'niter_success' in basinhopping_options, got {basinhopping_options.keys()}"
+                    )
             res = optimizer.minimize(
                 self.thetas,
                 extra_options={
@@ -1007,6 +1014,7 @@ class WaveFunctionUPS:
                     "stepsize_basin": basinhopping_options["stepsize_basin"],
                     "optimizer": basinhopping_options["optimizer"],
                     "maxiter": basinhopping_options["maxiter_optimizer"],
+                    "niter_success":basinhopping_options['niter_success'],
                 },
             )
 
