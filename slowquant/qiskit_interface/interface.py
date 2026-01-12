@@ -1173,6 +1173,7 @@ class QuantumInterface:
             if no_coeffs:
                 coeff = 1
             # Get distribution from cliques
+            # ToDo: Think about co-variance
             if do_cliques:
                 dist = self.saver[det_int].get_distr(pauli, self.mitigation_flags)
                 # Calculate p1: Probability of measuring one

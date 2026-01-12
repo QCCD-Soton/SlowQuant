@@ -80,9 +80,9 @@ class Optimizers:
                 if var is None:
                     std_str = " | N/A"
                 else:
-                    std_str = f" | {np.sqrt(var):3.16f}"
+                    std_str = f" | {np.sqrt(var):.6e}"
             print(
-                f"--------{str(self._iteration + 1).center(11)} | {time_str.center(18)} | {e_str.center(27)} | {evals_str.center(11)}{std_str}"
+                f"--------{str(self._iteration + 1).center(11)} | {time_str.center(18)} | {e_str.center(27)} | {evals_str.center(20)}{std_str}"
             )
             self._iteration += 1
             self._start = time.time()
