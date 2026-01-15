@@ -1131,6 +1131,7 @@ class QuantumInterface:
         op: FermionicOperator | SparsePauliOp,
         do_cliques: bool = True,
         no_coeffs: bool = False,
+        do_no_corr: bool = False,
         custom_parameters: list[float] | None = None,
     ) -> float:
         """Calculate sample variance (std**2) of expectation value of circuit and observables.
@@ -1142,6 +1143,7 @@ class QuantumInterface:
             op: SlowQuant fermionic operator.
             do_cliques: boolean if cliques are used. They are accessed via the saver.
             no_coeffs: boolean if coefficients of each Pauli string are used or all st to 1.
+            do_no_corr: If True, no correlation between Pauli strings in a clique is considered.
             custom_parameters: optional custom circuit parameters.
 
         Returns:
@@ -1181,10 +1183,8 @@ class QuantumInterface:
                 var_p = (
                     4 * np.abs(coeff.real) ** 2 * np.abs(p1 - p1**2)
                 )  # variance formula expressed in p1 probability
-                if self.shots is not None:
-                    var_p = var_p / (self.shots)
                 result += var_p
-        else:
+        elif not do_no_corr:
             # Pauli strings in a group are not independent.
             # Use approach of defining group random variable
 
@@ -1211,6 +1211,25 @@ class QuantumInterface:
                     sample_mean += value * group_var  # \sum_b p(b) \sum_l c_l <b|P_l|b>
                     sample_mean_sq += value * group_var**2  # \sum_b p(b) (\sum_l c_l <b|P_l|b>)^2
                 result += sample_mean_sq - sample_mean**2  # add group variances
+        else:
+            # Pauli strings in a group are considered independent.
+            # Loop over all Pauli strings in observable and build final result with coefficients
+            for pauli, coeff in zip(paulis_str, observables.coeffs):
+                if no_coeffs:
+                    coeff = 1
+                # Get distribution from cliques
+                dist = self.saver[det_int].get_distr(pauli, self.mitigation_flags)
+                # Calculate p1: Probability of measuring one
+                p1 = 0.0
+                for key, value in dist.items():
+                    if get_bitstring_sign(pauli, key) == 1:
+                        p1 += value
+                var_p = 4 * np.abs(coeff.real) ** 2 * np.abs(p1 - p1**2)
+                result += var_p
+
+        if self.shots is not None:
+            result = result / (self.shots)
+
         return result
 
     def _apply_M_mitigation(
