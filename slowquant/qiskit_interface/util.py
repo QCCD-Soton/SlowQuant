@@ -1,6 +1,7 @@
 import networkx as nx
 import numpy as np
 from qiskit import QuantumCircuit
+from qiskit.quantum_info import SparsePauliOp
 from qiskit.transpiler import CouplingMap, PassManager
 from qiskit_nature.second_q.mappers import JordanWignerMapper, ParityMapper
 from qiskit_nature.second_q.mappers.fermionic_mapper import FermionicMapper
@@ -374,6 +375,34 @@ class Clique:
                 new_heads.append(clique_head.head)
         return new_heads
 
+    def get_groups(self, paulis: list[str]) -> dict[str, list[str]]:
+        """Return groups of commuting Pauli strings based on current cliques.
+
+        Args:
+            paulis: List of Pauli strings.
+
+        Returns:
+            List of groups of commuting Pauli strings.
+        """
+        groups: dict[str, list[str]] = {}
+        # Loop over Pauli strings (passed via observable) in reverse sorted order
+        for pauli in sorted(paulis, reverse=True):
+            # Loop over Clique heads simulated so far
+            for clique_head in self.cliques:
+                # Check if Pauli string belongs to any already simulated Clique head.
+                do_fit, head_fit = fit_in_clique(pauli, clique_head.head)
+                if do_fit:
+                    if head_fit != clique_head.head:
+                        raise ValueError(
+                            f"Found matching clique, but head will be mutated. Head; {clique_head.head}, Pauli; {pauli}"
+                        )
+                    groups[clique_head.head] = [*groups.get(clique_head.head, []), pauli]
+                    break
+            else:  # no break
+                raise ValueError(f"Could not find matching clique for Pauli, {pauli}")
+
+        return groups
+
     def update_distr(
         self,
         new_heads: list[str],
@@ -425,6 +454,25 @@ class Clique:
                         f"Head, {clique_head.head}, has no distribution for mitigation; {mitigation_flags}"
                     )
                 return clique_head.distr.get_distr(mitigation_flags)
+        raise ValueError(f"Could not find matching clique for Pauli, {pauli}")
+
+    def get_head(self, pauli: str) -> str:
+        """Get clique head for a Pauli string.
+
+        Args:
+            pauli: Pauli string.
+
+        Returns:
+            Clique head for the Pauli string.
+        """
+        for clique_head in self.cliques:
+            do_fit, head_fit = fit_in_clique(pauli, clique_head.head)
+            if do_fit:
+                if clique_head.head != head_fit:
+                    raise ValueError(
+                        f"Found matching clique, but head will be mutated. Head; {clique_head.head}, Pauli; {pauli}"
+                    )
+                return clique_head.head
         raise ValueError(f"Could not find matching clique for Pauli, {pauli}")
 
     def get_empty_heads(self, mitigation_int) -> list[str]:
@@ -493,13 +541,20 @@ class Clique:
         for clique_head in self.cliques:
             print(f"Head: {clique_head.head}, Distribution: {clique_head.distr.data}")
 
-    def print_clique_heads(self) -> None:
-        """Print all clique heads."""
-        print("Clique heads:")
+    def get_clique_heads(self) -> list[str]:
+        """Return all clique heads.
+
+        Returns:
+            List of clique heads.
+        """
         heads = []
         for clique_head in self.cliques:
             heads.append(clique_head.head)
-        print(heads)
+        return heads
+
+    def print_clique_heads(self) -> None:
+        """Print all clique heads."""
+        print(self.get_clique_heads())
 
 
 def fit_in_clique(pauli: str, head: str) -> tuple[bool, str]:
@@ -1031,3 +1086,19 @@ def get_reordering_sign(det: str) -> int:
             if alphas % 2 == 1:
                 sign *= -1
     return sign
+
+
+def pauliop_to_dict(op: SparsePauliOp) -> dict[str, float]:
+    """Convert SparsePauliOp to dictionary.
+
+    Args:
+        op: SparsePauliOp object.
+
+    Returns:
+        Dictionary with Pauli strings as keys and coefficients as values.
+    """
+    pauli_dict = {}
+    for pauli, coeff in zip(op.paulis, op.coeffs):
+        pauli_str = pauli.to_label()
+        pauli_dict[pauli_str] = coeff.real
+    return pauli_dict
