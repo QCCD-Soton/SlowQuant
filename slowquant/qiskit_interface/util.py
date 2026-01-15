@@ -490,7 +490,9 @@ class Clique:
                 empties.append(clique_head.head)
         return empties
 
-    def get_distr_heads(self, heads: list[str], mitigation_int: int = 0) -> list[dict[int, float]]:
+    def get_distr_heads(
+        self, heads: list[str], mitigation_flags: MitigationFlags | None = None
+    ) -> list[dict[int, float]]:
         """Return the distribution data for a list of heads and for a given mitigation int (default 0).
 
         This function looks only for the specific heads given, not trying to find pauli strings in commuting heads.
@@ -498,7 +500,7 @@ class Clique:
 
         Args:
             heads: List of clique heads.
-            mitigation_int: Mitigation integer, default is 0.
+            mitigation_flags: Mitigation flags object, default is None.
 
         Returns:
             List of distributions for the given heads and mitigation integer.
@@ -510,7 +512,11 @@ class Clique:
         for head in heads:
             for clique_heads in self.cliques:
                 if clique_heads.head == head:
-                    distr.append(clique_heads.distr.data[mitigation_int])
+                    distr.append(
+                        clique_heads.distr.data[
+                            mitigation_flags.to_int() if mitigation_flags is not None else 0
+                        ]
+                    )
                     break
 
         return distr

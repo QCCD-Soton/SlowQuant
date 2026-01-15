@@ -1199,7 +1199,7 @@ class QuantumInterface:
                 sample_mean = 0.0
                 sample_mean_sq = 0.0
                 for key, value in (
-                    self.saver[det_int].get_distr_heads([group])[0].items()
+                    self.saver[det_int].get_distr_heads([group], self.mitigation_flags)[0].items()
                 ):  # get group/clique head distribution
                     # loop over paulis in group (second sum over l): group random variable
                     group_var = 0.0
