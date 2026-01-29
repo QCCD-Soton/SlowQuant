@@ -7,7 +7,6 @@ from typing import Any
 
 import numpy as np
 import scipy
-import scipy.optimize
 
 from slowquant.molecularintegrals.integralfunctions import (
     one_electron_integral_transform,
@@ -734,7 +733,7 @@ class WaveFunctionUPS:
         H = H.get_folded_operator(self.num_inactive_orbs, self.num_active_orbs, self.num_virtual_orbs)
 
         if qiskit_form:
-            return H.get_qiskit_form(self.num_orbs)
+            return H.get_qiskit_form(self.num_active_orbs)
         return H
 
     def run_wf_optimization_2step(
@@ -839,7 +838,7 @@ class WaveFunctionUPS:
                         "stepsize_basin": basinhopping_options["stepsize_basin"],
                         "optimizer": basinhopping_options["optimizer"],
                         "maxiter": basinhopping_options["maxiter_optimizer"],
-                        "niter_success":basinhopping_options['niter_success'],
+                        "niter_success": basinhopping_options["niter_success"],
                     },
                 )
 
@@ -1003,9 +1002,9 @@ class WaveFunctionUPS:
                     f"Expected option 'maxiter' in basinhopping_options, got {basinhopping_options.keys()}"
                 )
             if "niter_success" not in basinhopping_options:
-                    raise ValueError(
-                        f"Expected option 'niter_success' in basinhopping_options, got {basinhopping_options.keys()}"
-                    )
+                raise ValueError(
+                    f"Expected option 'niter_success' in basinhopping_options, got {basinhopping_options.keys()}"
+                )
             res = optimizer.minimize(
                 self.thetas,
                 extra_options={
@@ -1014,7 +1013,7 @@ class WaveFunctionUPS:
                     "stepsize_basin": basinhopping_options["stepsize_basin"],
                     "optimizer": basinhopping_options["optimizer"],
                     "maxiter": basinhopping_options["maxiter_optimizer"],
-                    "niter_success":basinhopping_options['niter_success'],
+                    "niter_success": basinhopping_options["niter_success"],
                 },
             )
 
