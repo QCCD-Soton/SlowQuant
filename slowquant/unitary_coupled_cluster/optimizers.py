@@ -138,14 +138,14 @@ class Optimizers:
                 niter=extra_options["niter_basin"],
                 T=extra_options["T_basin"],
                 stepsize=extra_options["stepsize_basin"],
-                niter_success=extra_options["niter_success"],
-                disp=True,
                 # Options for local minimizer
                 minimizer_kwargs={
                     "method": extra_options["optimizer"],
                     "callback": print_progress,
                     "options": {"maxiter": extra_options["maxiter"], "disp": True},
                 },
+                niter_success=extra_options["niter_success"],
+                disp=True,
             )
         elif self.method in ("cobyla", "cobyqa"):
             res = scipy.optimize.minimize(
