@@ -801,13 +801,7 @@ class WaveFunctionUPS:
                         "f_rotosolve_optimized": self._calc_energy_rotosolve_optimization,
                     },
                 )
-            else:
-                res = optimizer.minimize(
-                    self.thetas,
-                )
-            self.thetas = res.x.tolist()
-
-            if optimizer_name.lower() == "basinhopping":
+            elif optimizer_name.lower() == "basinhopping":
                 if not isinstance(basinhopping_options, dict):
                     raise TypeError("basinhopping_options is not set, but is required for basinhopping")
                 if "niter_basin" not in basinhopping_options:
@@ -841,6 +835,11 @@ class WaveFunctionUPS:
                         "niter_success": basinhopping_options["niter_success"],
                     },
                 )
+            else:
+                res = optimizer.minimize(
+                    self.thetas,
+                )
+            self.thetas = res.x.tolist()
 
             if orbital_optimization and len(self.kappa) != 0:
                 if not is_silent_subiterations:

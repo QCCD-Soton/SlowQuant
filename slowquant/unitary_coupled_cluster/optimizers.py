@@ -77,12 +77,46 @@ class Optimizers:
             self._iteration += 1
             self._start = time.time()
 
+    def _basinhopping_progress(
+        self,
+        x: Sequence[float],
+        f,
+        accept: bool,
+        fun: Callable[[list[float]], float | np.ndarray],
+        silent: bool = False,
+    ) -> None:
+        """Print progress during optimization.
+
+        Args:
+            x: Parameters.
+            f: function.
+            accept: Acceptance test for minimization step.
+            fun: function
+            silent: Silence progress print.
+        """
+        if not silent:
+            e = fun(list(x))
+            if isinstance(e, np.ndarray):
+                e_str = f"{np.mean(e):3.16f}"
+            else:
+                e_str = f"{e:3.16f}"
+            evals_str = str(self.energy_eval_callback()) if self.energy_eval_callback else "N/A"
+            print(f"-------{e_str.center(27)} | {evals_str.center(11)}")
+            self._start = time.time()
+
     def minimize(self, x0: Sequence[float], extra_options: dict[str, Any] | None = None) -> Result:
         """Minimize function.
 
         extra_options:
             * R dict[str, int]: Order parameter needed for Rotosolve.
             * param_names Sequence[str]: Names of parameters needed for Rotosolve.
+
+            * niter_basin int: Number of basin hopping iterations.
+            * T_basin int: Temperature parameter for Metropolis acceptance criterion in basin hopping.
+            * stepsize_basin int: Maximum value for random displacement during basin hopping.
+            * optimizer str: Defines the local optimizer to be used during basin hopping.
+            * maxiter_optimizer int: Maximum number of iterations for local optimization during basin hopping.
+            * niter_success int: Number of iterations where global minimum remains the same before stopping the basin hopping.
 
         Args:
             x0: Starting value of changeable parameters.
@@ -91,6 +125,7 @@ class Optimizers:
         self._start = time.time()
         self._iteration = 0
         print_progress = partial(self._print_progress, fun=self.fun, silent=self.is_silent)
+        basinhopping_progress = partial(self._basinhopping_progress, fun=self.fun, silent=self.is_silent)
         if self.method in ("bfgs", "l-bfgs-b", "slsqp"):
             if self.grad is not None:
                 res = scipy.optimize.minimize(
@@ -138,6 +173,7 @@ class Optimizers:
                 niter=extra_options["niter_basin"],
                 T=extra_options["T_basin"],
                 stepsize=extra_options["stepsize_basin"],
+                callback=basinhopping_progress,
                 # Options for local minimizer
                 minimizer_kwargs={
                     "method": extra_options["optimizer"],
