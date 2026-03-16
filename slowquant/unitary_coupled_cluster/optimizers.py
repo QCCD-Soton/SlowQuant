@@ -73,13 +73,13 @@ class Optimizers:
             else:
                 e_str = f"{e:3.16f}"
             time_str = f"{time.time() - self._start:7.2f}"
-            evals_str = str(self.energy_eval_callback()) if self.energy_eval_callback else "N/A"
+            evals_str = ""
+            if self.energy_eval_callback:
+                evals_str =  str(self.energy_eval_callback())
             std_str = ""
             if self.std_callback is not None:
                 var = self.std_callback()
-                if var is None:
-                    std_str = " | N/A"
-                else:
+                if var is not None:
                     std_str = f" | {np.sqrt(var):.6e}"
             print(
                 f"--------{str(self._iteration + 1).center(11)} | {time_str.center(18)} | {e_str.center(27)} | {evals_str.center(20)}{std_str}"
