@@ -828,7 +828,7 @@ class WaveFunctionCircuit:
             tol: Convergence tolerance.
             maxiter: Maximum number of iterations.
             is_silent_subiterations: Silence subiterations.
-            print_std: Print std of electronic Hamiltonian during optimization.
+            print_std: Print standard deviation of the electronic Hamiltonian during optimization.
         """
         if isinstance(self.QI.ansatz, QuantumCircuit) and optimizer_name.lower() not in ("cobyla", "cobyqa"):
             raise ValueError("Custom Ansatz in QI only works with COBYLA and COBYQA as optimizer.")
