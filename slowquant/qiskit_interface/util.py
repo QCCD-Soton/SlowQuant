@@ -400,7 +400,6 @@ class Clique:
                     break
             else:  # no break
                 raise ValueError(f"Could not find matching clique for Pauli, {pauli}")
-
         return groups
 
     def update_distr(

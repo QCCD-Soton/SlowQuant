@@ -968,7 +968,7 @@ class WaveFunctionCircuit:
             orbital_optimization: Perform orbital optimization.
             tol: Convergence tolerance.
             maxiter: Maximum number of iterations.
-            print_std: Print std in sub-iteration headers.
+            print_std: Print standard deviation in sub-iteration headers.
         """
         if isinstance(self.QI.ansatz, QuantumCircuit) and optimizer_name.lower() not in ("cobyla", "cobyqa"):
             raise ValueError("Custom Ansatz in QI only works with COBYLA and COBYQA as optimizer.")
