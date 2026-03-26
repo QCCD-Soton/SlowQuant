@@ -983,27 +983,26 @@ class WaveFunctionUPS:
             )
         elif optimizer_name.lower() == "basinhopping":
             if not isinstance(basinhopping_options, dict):
-                raise TypeError("basinhopping_options is not set, but is required for basinhopping")
+                basinhopping_options = {}
+                # print("Extra options required for basin-hopping but not passed through. Default created")
             if "niter_basin" not in basinhopping_options:
-                raise ValueError(
-                    f"Expected option 'niter_basin' in basinhopping_options, got {basinhopping_options.keys()}"
-                )
+                basinhopping_options.update({"niter_basin": 100})
+                # print(f"niter_basin set to default value: {basinhopping_options['niter_basin']}")
             if "T_basin" not in basinhopping_options:
-                raise ValueError(
-                    f"Expected option 'param_names' in basinhopping_options, got {basinhopping_options.keys()}"
-                )
+                basinhopping_options.update({"T_basin": 0.1})
+                # print(f"T_basin set to default value: {basinhopping_options['T_basin']}")
             if "stepsize_basin" not in basinhopping_options:
-                raise ValueError(
-                    f"Expected option 'stepsize_basin' in basinhopping_options, got {basinhopping_options.keys()}"
-                )
+                basinhopping_options.update({"stepsize_basin": 0.5})
+                # print(f"stepsize_basin set to default value: {basinhopping_options['stepsize_basin']}")
+            if "optimizer" not in basinhopping_options:
+                basinhopping_options.update({"optimizer": "BFGS"})
+                # print(f"Optimizer set to default: {basinhopping_options['optimizer']}")
             if "maxiter_optimizer" not in basinhopping_options:
-                raise ValueError(
-                    f"Expected option 'maxiter' in basinhopping_options, got {basinhopping_options.keys()}"
-                )
+                basinhopping_options.update({"maxiter_optimizer": 2500})
+                # print(f"maxiter_optimizer set to default value: {basinhopping_options['maxiter_optimizer']}")
             if "niter_success" not in basinhopping_options:
-                raise ValueError(
-                    f"Expected option 'niter_success' in basinhopping_options, got {basinhopping_options.keys()}"
-                )
+                basinhopping_options.update({"niter_success": 12})
+                # print(f"niter_success set to default value: {basinhopping_options['niter_success']}")
             res = optimizer.minimize(
                 self.thetas,
                 extra_options={
