@@ -77,7 +77,7 @@ class Optimizers:
             self._iteration += 1
             self._start = time.time()
 
-    def minimize(self, x0: Sequence[float], extra_options: dict[str, Any] | None = None) -> Result:
+    def minimize(self, x0: Sequence[float], extra_options: dict[str, Any]) -> Result:
         """Minimize function.
 
         extra_options:
@@ -119,26 +119,6 @@ class Optimizers:
                     options={"maxiter": self.maxiter, "disp": True},
                 )
         elif self.method in ("basinhopping"):
-            if not isinstance(extra_options, dict):
-                raise TypeError("extra_options is not set, but is required for basinhopping")
-            if "niter_basin" not in extra_options:
-                raise ValueError(
-                    f"Expected option 'niter_basin' in extra_options, got {extra_options.keys()}"
-                )
-            if "T_basin" not in extra_options:
-                raise ValueError(
-                    f"Expected option 'param_names' in extra_options, got {extra_options.keys()}"
-                )
-            if "stepsize_basin" not in extra_options:
-                raise ValueError(
-                    f"Expected option 'stepsize_basin' in extra_options, got {extra_options.keys()}"
-                )
-            if "maxiter" not in extra_options:
-                raise ValueError(f"Expected option 'maxiter' in extra_options, got {extra_options.keys()}")
-            if "niter_success" not in extra_options:
-                raise ValueError(
-                    f"Expection option 'niter_success' in extra_options, got {extra_options.keys()}"
-                )
             res = scipy.optimize.basinhopping(
                 self.fun,
                 x0,
