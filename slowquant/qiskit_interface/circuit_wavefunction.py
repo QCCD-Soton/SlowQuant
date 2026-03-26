@@ -979,7 +979,7 @@ class WaveFunctionCircuit:
         if orbital_optimization:
             print(f"### Number kappa: {len(self.kappa)}")
         print(f"### Number theta: {len(self.thetas)}")
-        if optimizer_name.lower() in ("rotosolve","rotosolve_grad"):
+        if optimizer_name.lower() in ("rotosolve", "rotosolve_grad"):
             if orbital_optimization and len(self.kappa) != 0:
                 raise ValueError(
                     "Cannot use RotoSolve together with orbital optimization in the one-step solver."

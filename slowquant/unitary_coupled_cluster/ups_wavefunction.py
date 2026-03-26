@@ -791,7 +791,7 @@ class WaveFunctionUPS:
             )
             self._old_opt_parameters = np.zeros_like(self.thetas) + 10**20
             self._E_opt_old = 0.0
-            if optimizer_name.lower() in ("rotosolve","rotosolve_grad"):
+            if optimizer_name.lower() in ("rotosolve", "rotosolve_grad"):
                 res = optimizer.minimize(
                     self.thetas,
                     extra_options={
@@ -877,7 +877,7 @@ class WaveFunctionUPS:
         if orbital_optimization:
             print(f"### Number kappa: {len(self.kappa)}")
         print(f"### Number theta: {self.ups_layout.n_params}")
-        if optimizer_name.lower() in ("rotosolve","rotosolve_grad"):
+        if optimizer_name.lower() in ("rotosolve", "rotosolve_grad"):
             if orbital_optimization and len(self.kappa) != 0:
                 raise ValueError(
                     "Cannot use RotoSolve together with orbital optimization in the one-step solver."
@@ -935,7 +935,7 @@ class WaveFunctionUPS:
         )
         self._old_opt_parameters = np.zeros_like(parameters) + 10**20
         self._E_opt_old = 0.0
-        if optimizer_name.lower() in ("rotosolve","rotosolve_grad"):
+        if optimizer_name.lower() in ("rotosolve", "rotosolve_grad"):
             res = optimizer.minimize(
                 parameters,
                 extra_options={

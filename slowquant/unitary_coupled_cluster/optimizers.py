@@ -75,7 +75,7 @@ class Optimizers:
             time_str = f"{time.time() - self._start:7.2f}"
             evals_str = ""
             if self.energy_eval_callback:
-                evals_str =  str(self.energy_eval_callback())
+                evals_str = str(self.energy_eval_callback())
             std_str = ""
             if self.std_callback is not None:
                 var = self.std_callback()
@@ -252,6 +252,7 @@ class RotoSolve:
             f: Function to be minimized, can only take one argument.
             x0: Initial guess of changeable parameters of f.
             f_rotosolve_optimized: Optimized function for Rotosolve.
+            grad: Gradient of f, used for gradient-based convergence criterion.
 
         Returns:
             Minimization results.
@@ -306,15 +307,14 @@ class RotoSolve:
                     x_best = x.copy()
                     success = True  # sucessful optimization
                     break
-            else:
-                # gradient-based convergence threshold
-                # get gradients in all parameters 
-                # check against infinity norm (= max gradient)
-                if np.max(np.abs(grad(x))) < self.threshold:
-                    f_best = f_new
-                    x_best = x.copy()
-                    success = True  # sucessful optimization
-                    break
+            # gradient-based convergence threshold
+            # get gradients in all parameters
+            # check against infinity norm (= max gradient)
+            elif np.max(np.abs(grad(x))) < self.threshold:
+                f_best = f_new
+                x_best = x.copy()
+                success = True  # sucessful optimization
+                break
             if (f_new - f_best) > 0.0:
                 fails += 1
             else:
