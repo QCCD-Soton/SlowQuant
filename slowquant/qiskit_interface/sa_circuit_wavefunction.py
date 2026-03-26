@@ -462,7 +462,7 @@ class WaveFunctionSACircuit:
         self,
         optimizer_name: str,
         orbital_optimization: bool = False,
-        tol: float = 1e-10,
+        tol: float = 1e-6,
         maxiter: int = 1000,
         is_silent_subiterations: bool = False,
     ) -> None:
@@ -493,7 +493,7 @@ class WaveFunctionSACircuit:
                 print(
                     "--------Iteration # | Iteration time [s] | Electronic energy [Hartree] | Energy measurement #"
                 )
-            if optimizer_name.lower() in ("rotosolve",):
+            if optimizer_name.lower() in ("rotosolve","rotosolve_grad"):
                 # For RotoSolve type solvers the energy per state is needed in the optimization,
                 # instead of only the state-averaged energy.
                 energy_theta = partial(
@@ -588,7 +588,7 @@ class WaveFunctionSACircuit:
         self,
         optimizer_name: str,
         orbital_optimization: bool = False,
-        tol: float = 1e-10,
+        tol: float = 1e-6,
         maxiter: int = 1000,
     ) -> None:
         """Run one step optimization of wave function.
@@ -605,7 +605,7 @@ class WaveFunctionSACircuit:
         if orbital_optimization:
             print(f"### Number kappa: {len(self.kappa)}")
         print(f"### Number theta: {len(self.thetas)}")
-        if optimizer_name.lower() == "rotosolve":
+        if optimizer_name.lower() in ("rotosolve","rotosolve_grad"):
             if orbital_optimization and len(self.kappa) != 0:
                 raise ValueError(
                     "Cannot use RotoSolve together with orbital optimization in the one-step solver."
@@ -653,7 +653,7 @@ class WaveFunctionSACircuit:
                 parameters = self.kappa
         else:
             parameters = self.thetas
-        if optimizer_name.lower() in ("rotosolve",):
+        if optimizer_name.lower() in ("rotosolve","rotosolve_grad"):
             # For RotoSolve type solvers the energy per state is needed in the optimization,
             # instead of only the state-averaged energy.
             energy = partial(
