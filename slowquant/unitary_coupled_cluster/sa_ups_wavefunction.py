@@ -1052,6 +1052,6 @@ class WaveFunctionSAUPS:
             if i % len(self.csf_coeffs) == 0:
                 idx += 1
             energies[idx] += bra @ ket
-        self.num_energy_evals += self.num_states  # count one measurement per state
+        self.num_energy_evals += self.num_states * len(energies)  # count one measurement per state
 
         return energies

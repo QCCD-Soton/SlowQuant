@@ -298,8 +298,6 @@ class RotoSolve:
             else:
                 # Single state case
                 f_new = f_tmp
-            if self._callback is not None:
-                self._callback(x)
             if grad is None:
                 # energy-based convergence criterion
                 if abs(f_best - f_new) < self.threshold:
@@ -315,6 +313,8 @@ class RotoSolve:
                 x_best = x.copy()
                 success = True  # sucessful optimization
                 break
+            if self._callback is not None:
+                self._callback(x)
             if (f_new - f_best) > 0.0:
                 fails += 1
             else:
