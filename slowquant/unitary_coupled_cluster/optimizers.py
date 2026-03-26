@@ -307,7 +307,7 @@ class RotoSolve:
                     success = True  # sucessful optimization
                     break
             else:
-                # gradient-based convergence criterion
+                # gradient-based convergence threshold
                 # get gradients in all parameters 
                 # check against infinity norm (= max gradient)
                 if np.max(np.abs(grad(x))) < self.threshold:
