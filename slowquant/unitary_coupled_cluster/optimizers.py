@@ -77,7 +77,7 @@ class Optimizers:
             self._iteration += 1
             self._start = time.time()
 
-    def minimize(self, x0: Sequence[float], extra_options: dict[str, Any]) -> Result:
+    def minimize(self, x0: Sequence[float], extra_options: dict[str, Any] = {}) -> Result:
         """Minimize function.
 
         extra_options:
