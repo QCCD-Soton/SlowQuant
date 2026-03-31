@@ -241,12 +241,13 @@ class WaveFunctionUPS:
                 raise ValueError("Perfect pairing determinant violates orbital or electron numbers")
 
             # Swap mo coefficients to resembles pp layout
-            holes = [i for i, (h, p) in enumerate(zip(hf_det, pp_det)) if h == "1" and p == "0"]
-            particles = [i for i, (h, p) in enumerate(zip(hf_det, pp_det)) if h == "0" and p == "1"]
-            mo_new = mo_coeffs.copy()
-            mo_new[:, holes + particles] = mo_new[:, particles + holes].copy()
-            self._c_mo = mo_new
-            # self._c_mo[:, holes + particles] = self._c_mo[:, particles + holes].copy()
+            hole = [i for i, (h, p) in enumerate(zip(hf_det, pp_det)) if h == "1" and p == "0"]
+            part = [i for i, (h, p) in enumerate(zip(hf_det, pp_det)) if h == "0" and p == "1"]
+            hole_spatial = sorted(set(i // 2 + self.num_inactive_orbs for i in hole))
+            part_spatial = sorted(set(i // 2 + self.num_inactive_orbs for i in part))
+            pp_mo_coeffs = mo_coeffs.copy()
+            pp_mo_coeffs[:, hole_spatial + part_spatial] = pp_mo_coeffs[:, part_spatial + hole_spatial]
+            self._c_mo = pp_mo_coeffs
 
             # Assign weight to reference
             self.csf_coeffs[self.ci_info.det2idx[int(pp_det, 2)]] = 1
