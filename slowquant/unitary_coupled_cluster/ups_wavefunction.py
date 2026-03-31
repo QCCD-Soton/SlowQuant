@@ -62,7 +62,6 @@ class WaveFunctionUPS:
             raise ValueError(f"cas must have two elements, got {len(cas)} elements.")
         # Init stuff
         self.int_gen = IntegralManager(integral_generator)
-        self._c_mo = mo_coeffs
         self.inactive_spin_idx = []
         self.virtual_spin_idx = []
         self.active_spin_idx = []
@@ -210,8 +209,51 @@ class WaveFunctionUPS:
         )
         self.num_det = len(self.ci_info.idx2det)
         self.csf_coeffs = np.zeros(self.num_det)
-        hf_det = int("1" * self.num_active_elec + "0" * (self.num_active_spin_orbs - self.num_active_elec), 2)
-        self.csf_coeffs[self.ci_info.det2idx[hf_det]] = 1
+
+        hf_det = "1" * self.num_active_elec + "0" * (self.num_active_spin_orbs - self.num_active_elec)
+        if (
+            ansatz.lower() == "tups"
+            and "do_pp" in self.ansatz_options.keys()
+            and self.ansatz_options["do_pp"]
+        ):
+            # Obtain pp determinant
+            pp_det = ""
+            spin_orb = 0
+            elec_count = self.num_active_elec
+            while spin_orb < self.num_active_spin_orbs:
+                if (
+                    elec_count >= 2
+                    and (self.num_active_spin_orbs - spin_orb) >= 4
+                    and elec_count <= (self.num_active_spin_orbs - spin_orb - 2)
+                ):
+                    pp_det += "1100"
+                    elec_count -= 2
+                    spin_orb += 4
+                elif elec_count == 0:
+                    pp_det += "0"
+                    spin_orb += 1
+                elif elec_count != 0:
+                    pp_det += "1"
+                    spin_orb += 1
+                    elec_count -= 1
+            print("perfect-pairing determinant found as:", pp_det)
+            if len(pp_det) != self.num_active_spin_orbs or pp_det.count("1") != self.num_active_elec:
+                raise ValueError("Perfect pairing determinant violates orbital or electron numbers")
+
+            # Swap mo coefficients to resembles pp layout
+            holes = [i for i, (h, p) in enumerate(zip(hf_det, pp_det)) if h == "1" and p == "0"]
+            particles = [i for i, (h, p) in enumerate(zip(hf_det, pp_det)) if h == "0" and p == "1"]
+            mo_new = mo_coeffs.copy()
+            mo_new[:, holes + particles] = mo_new[:, particles + holes].copy()
+            self._c_mo = mo_new
+            # self._c_mo[:, holes + particles] = self._c_mo[:, particles + holes].copy()
+
+            # Assign weight to reference
+            self.csf_coeffs[self.ci_info.det2idx[int(pp_det, 2)]] = 1
+        else:
+            self.csf_coeffs[self.ci_info.det2idx[int(hf_det, 2)]] = 1
+            self._c_mo = mo_coeffs
+
         self.ci_coeffs = np.copy(self.csf_coeffs)
         # Construct UPS Structure
         self.ups_layout = UpsStructure()
