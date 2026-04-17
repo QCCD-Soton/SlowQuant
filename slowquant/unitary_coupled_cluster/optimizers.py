@@ -176,6 +176,29 @@ class Optimizers:
             else:
                 res = optimizer.minimize(self.fun, x0, grad=self.grad)
 
+        elif self.method in ("basinhopping"):
+            if not isinstance(extra_options, dict):
+                raise TypeError("extra_options is not set, but is required for Basinhopping")
+            if "local_minimiser" not in extra_options:
+                raise ValueError(
+                    f"Expected option 'local_minimiser' in extra_options, got {extra_options.keys()}"
+                )
+            if "temperature" not in extra_options:
+                raise ValueError(
+                    f"Expected option 'temperature' in extra_options, got {extra_options.keys()}"
+                )
+            if "step_size" not in extra_options:
+                raise ValueError(f"Expected option 'step_size' in extra_options, got {extra_options.keys()}")
+            optimiser = BasinHopping(
+                extra_options["temperature"],
+                extra_options["step_size"],
+                acc_rate=0.5,
+                max_hops=12,
+                callback=print_progress,
+            )
+            bh_extras = {"tol": self.tol, "maxiter": self.maxiter, "grad": self.grad}
+            res = optimiser.minimize(self.fun, x0, extra_options["local_minimiser"], bh_extras)
+
         else:
             raise ValueError(f"Got an unkonwn optimizer {self.method}")
         result = Result()
@@ -533,3 +556,120 @@ def reconstructed_f_derivative(
                 de += energy_vals[i][k] * (s1_prime * s2 - s1 * s2_prime) / (s2**2)  # type: ignore
         de = de / len(energy_vals)
     return de
+
+
+class BasinHopping:
+    def __init__(
+        self,
+        temperature: float,
+        step_size: float,
+        acc_rate: float,
+        max_hops: int,
+        callback: Callable[[list[float]], None] | None = None,
+    ):
+        """TODO: FILL IN PROPERLY.
+
+        Args:
+            temperature (float): _description_
+            step_size (float): _description_
+            acc_rate (float): _description_
+            max_hops (int): _description_
+            callback (Callable[[list[float]], None] | None, optional): _description_. Defaults to None.
+        """
+        self.temperature = temperature
+        self.step_size = step_size
+        self.acc_rate = acc_rate
+        self.max_hops = max_hops
+
+        self._callback = callback
+
+    def minimize(
+        self,
+        fun: Callable[[list[float]], float | np.ndarray],
+        x0: Sequence[float],
+        local_minimiser: str,
+        local_min_options: dict,
+    ) -> Result:
+        """TODO: FILL IN PROPERLY 3.
+
+        Args:
+            fun (Callable[[list[float]], float  |  np.ndarray]): _description_
+            x0 (Sequence[float]): _description_
+            local_minimiser (str): _description_
+            local_min_options (dict): _description_
+
+        Returns:
+            Result: _description_
+        """
+        self.fun = fun
+
+        self.best_x = x0
+        self.current_x = x0
+
+        self.best_e = np.inf
+        self.current_e = np.inf
+
+        self.tol = local_min_options["tol"]
+        self.maxiter = local_min_options["maxiter"]
+        self.grad = local_min_options["grad"]
+
+        n_hops = 0
+        while n_hops < self.max_hops:
+            # TODO: random theta update
+
+            # TODO: accept with acceptance criteria below
+
+            if local_minimiser in ("bfgs", "l-bfgs-b", "slsqp"):
+                if self.grad is not None:
+                    res = scipy.optimize.minimize(
+                        self.fun,
+                        x0,
+                        jac=self.grad,
+                        method=local_minimiser,
+                        tol=self.tol,
+                        callback=self._callback,
+                        options={"maxiter": self.maxiter, "disp": True},
+                    )
+                else:
+                    res = scipy.optimize.minimize(
+                        self.fun,
+                        x0,
+                        method=local_minimiser,
+                        tol=self.tol,
+                        callback=self._callback,
+                        options={"maxiter": self.maxiter, "disp": True},
+                    )
+            elif local_minimiser in ("cobyla", "cobyqa"):
+                res = scipy.optimize.minimize(
+                    self.fun,
+                    x0,
+                    method=local_minimiser,
+                    tol=self.tol,
+                    callback=self._callback,
+                    options={"maxiter": self.maxiter, "disp": True},
+                )
+
+        res = Result()
+        res.fun = self.best_e
+        res.x = self.best_x
+
+        # TODO: think about how to measure success of a basinhopping run
+
+        return res
+
+    def accept_move(self, new_e) -> bool:
+        """TODO: FILL IN PROPERLY 2.
+
+        Args:
+            new_e (_type_): _description_
+
+        Returns:
+            bool: _description_
+        """
+        metropolis = np.exp(-(1 / self.temperature) * (self.current_e - new_e))
+        p = min(1, metropolis)
+
+        if np.random.Generator(0, 1, 1) < p:
+            return True
+        else:
+            return False
