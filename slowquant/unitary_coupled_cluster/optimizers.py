@@ -193,7 +193,7 @@ class Optimizers:
                 extra_options["temperature"],
                 extra_options["step_size"],
                 acc_rate=0.5,
-                max_hops=12,
+                n_iter=12,
                 callback=print_progress,
             )
             bh_extras = {"tol": self.tol, "maxiter": self.maxiter, "grad": self.grad}
@@ -563,23 +563,25 @@ class BasinHopping:
         self,
         temperature: float,
         step_size: float,
-        acc_rate: float,
-        max_hops: int,
+        n_iter: int,
+        acc_rate: float = 0.5,
         callback: Callable[[list[float]], None] | None = None,
     ):
-        """TODO: FILL IN PROPERLY.
+        """Initialise the basinhopping class with hyperparameters.
 
         Args:
-            temperature (float): _description_
-            step_size (float): _description_
-            acc_rate (float): _description_
-            max_hops (int): _description_
-            callback (Callable[[list[float]], None] | None, optional): _description_. Defaults to None.
+            temperature (float): Temperature of the basinhopping run.
+            step_size (float): Stepsize of random pertubation.
+            n_iter (int): Number of basin_hopping iterations to peform. Will perform n_iter + 1.
+            acc_rate (float): The target acceptance rate to aim for. Stepsize will be adjusted to try and maintain this.
+            callback (Callable[[list[float]], None] | None, optional): Callback function, takes only x (parameters) as an argument. Defaults to None.
         """
         self.temperature = temperature
         self.step_size = step_size
-        self.acc_rate = acc_rate
-        self.max_hops = max_hops
+        self.targ_acc_rate = acc_rate
+        self.n_iter = n_iter
+
+        # TODO: n_iter_success?
 
         self._callback = callback
 
@@ -590,64 +592,63 @@ class BasinHopping:
         local_minimiser: str,
         local_min_options: dict,
     ) -> Result:
-        """TODO: FILL IN PROPERLY 3.
+        """Performs a sequence of basinhopping steps.
 
         Args:
-            fun (Callable[[list[float]], float  |  np.ndarray]): _description_
-            x0 (Sequence[float]): _description_
-            local_minimiser (str): _description_
-            local_min_options (dict): _description_
+            fun: Function to be minimized, can only take one argument.
+            x0: Initial guess of changeable parameters of f.
+            local_minimiser (str): The name of the local minimiser to use.
+
+            local_min_options (dict): Extra options for the local minimiser.
+                *tol: Tolerance for convergance of local minimiser.
+                *maxiter: Maximum number of iterations for local minimiser.
+                *grad: Gradient function/matrix for local minimiser.
+
 
         Returns:
-            Result: _description_
+            Result: The resulting best energy and respective paramters.
         """
         self.fun = fun
+        self.local_minimiser = local_minimiser
 
-        self.best_x = x0
-        self.current_x = x0
-
-        self.best_e = np.inf
-        self.current_e = np.inf
+        # find first local min
+        self.current_e, self.current_x = self._find_local_min(x0)
+        self.best_x = self.current_x
+        self.best_e = self.best_x
 
         self.tol = local_min_options["tol"]
         self.maxiter = local_min_options["maxiter"]
         self.grad = local_min_options["grad"]
 
-        n_hops = 0
-        while n_hops < self.max_hops:
-            # TODO: random theta update
+        n_iter = 0
+        accepted: list[int] = []
+        while n_iter < self.n_iter:
+            # random theta update in the range -pi to pi?
+            rndm = np.random.default_rng()
+            x_pertubated = (
+                self.current_x + (rndm.random(len(self.current_x)) * 2 * np.pi * self.step_size).tolist()
+            )
+            x_pertubated = [x - (2 * np.pi) if x > (2 * np.pi) else x for x in x_pertubated]
 
-            # TODO: accept with acceptance criteria below
+            # local minimisation of this random purtabation
+            new_e, new_x = self._find_local_min(x_pertubated)
 
-            if local_minimiser in ("bfgs", "l-bfgs-b", "slsqp"):
-                if self.grad is not None:
-                    res = scipy.optimize.minimize(
-                        self.fun,
-                        x0,
-                        jac=self.grad,
-                        method=local_minimiser,
-                        tol=self.tol,
-                        callback=self._callback,
-                        options={"maxiter": self.maxiter, "disp": True},
-                    )
-                else:
-                    res = scipy.optimize.minimize(
-                        self.fun,
-                        x0,
-                        method=local_minimiser,
-                        tol=self.tol,
-                        callback=self._callback,
-                        options={"maxiter": self.maxiter, "disp": True},
-                    )
-            elif local_minimiser in ("cobyla", "cobyqa"):
-                res = scipy.optimize.minimize(
-                    self.fun,
-                    x0,
-                    method=local_minimiser,
-                    tol=self.tol,
-                    callback=self._callback,
-                    options={"maxiter": self.maxiter, "disp": True},
-                )
+            # accept with acceptance criteria below
+            accept = self._accept_move(new_e)
+            if accept:
+                self.current_e = new_e
+                self.current_x = new_x
+                accepted.append(1)
+            else:
+                accepted.append(0)
+
+            # Update best found so far for recordkeeping
+            if self.current_e < self.best_e:
+                self.best_e = self.current_e
+                self.bext_x = self.best_x
+
+            # adjsut stepsize according to target acceptance rate
+            self._adjust_stepsize(accepted)
 
         res = Result()
         res.fun = self.best_e
@@ -657,19 +658,75 @@ class BasinHopping:
 
         return res
 
-    def accept_move(self, new_e) -> bool:
-        """TODO: FILL IN PROPERLY 2.
+    def _accept_move(self, new_e: float) -> bool:
+        """Calculates the metropolis acceptance probability to decide if a move is accepted or rejected.
 
         Args:
-            new_e (_type_): _description_
+            new_e (float): The new local minimum energy.
 
         Returns:
-            bool: _description_
+            bool: True if accept move, False if reject move.
         """
-        metropolis = np.exp(-(1 / self.temperature) * (self.current_e - new_e))
+        metropolis = np.exp((-1 / self.temperature) * (self.current_e - new_e))
         p = min(1, metropolis)
 
         if np.random.Generator(0, 1, 1) < p:
             return True
         else:
             return False
+
+    def _find_local_min(self, x0: Sequence[float]) -> tuple[float, np.ndarray]:
+        """Uses scipy to find the next local minima.
+
+        Args:
+            x0: The parameters to use as the starting point for minimisation.
+
+        Returns:
+            tuple[float, np.ndarray]: The minimised energy, followed by the function parameters at that energy.
+        """
+        # TODO: find way to return error messages
+
+        if self.local_minimiser in ("bfgs", "l-bfgs-b", "slsqp"):
+            if self.grad is not None:
+                res = scipy.optimize.minimize(
+                    self.fun,
+                    x0,
+                    jac=self.grad,
+                    method=self.local_minimiser,
+                    tol=self.tol,
+                    callback=self._callback,
+                    options={"maxiter": self.maxiter, "disp": True},
+                )
+            else:
+                res = scipy.optimize.minimize(
+                    self.fun,
+                    x0,
+                    method=self.local_minimiser,
+                    tol=self.tol,
+                    callback=self._callback,
+                    options={"maxiter": self.maxiter, "disp": True},
+                )
+        elif self.local_minimiser in ("cobyla", "cobyqa"):
+            res = scipy.optimize.minimize(
+                self.fun,
+                x0,
+                method=self.local_minimiser,
+                tol=self.tol,
+                callback=self._callback,
+                options={"maxiter": self.maxiter, "disp": True},
+            )
+        return res.fun, res.x
+
+    def _adjust_stepsize(self, accepted: list[int], adjust_factor: float = 0.1):
+        """Adjust the stepsize according to the target acceptance rate.
+
+        Args:
+            accepted (list): List of how many moved were accepted or rejected.
+            adjust_factor (float, optional): How much to increase or decrease the stepsize by. Defaults to 0.1.
+        """
+        acc_rate = np.average(accepted)
+
+        if acc_rate > self.targ_acc_rate:
+            self.step_size += adjust_factor
+        elif acc_rate < self.targ_acc_rate:
+            self.step_size -= adjust_factor
