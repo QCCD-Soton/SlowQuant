@@ -910,6 +910,7 @@ class WaveFunctionUPS:
         orbital_optimization: bool = False,
         tol: float = 1e-6,
         maxiter: int = 1000,
+        bh_params: dict | None = None,
     ) -> None:
         """Run one step optimization of wave function.
 
@@ -918,6 +919,11 @@ class WaveFunctionUPS:
             orbital_optimization: Perform orbital optimization.
             tol: Convergence tolerance.
             maxiter: Maximum number of iterations.
+
+            bh_params(dict): Parameters for basinhopping, required for BH but will default to None for other minimiers.
+                *temperature: The temperature for the basinhopping run.
+                *step_size: The size of the random pertubation to the parameters.
+                *local_minimiser: Name of the method for local minimisation.
         """
         print("### Parameters information:")
         if orbital_optimization:
@@ -990,6 +996,8 @@ class WaveFunctionUPS:
                     "f_rotosolve_optimized": self._calc_energy_rotosolve_optimization,
                 },
             )
+        elif optimizer_name.lower() in ("basinhopping"):
+            res = optimizer.minimize(parameters, extra_options=bh_params)
         else:
             res = optimizer.minimize(
                 parameters,
