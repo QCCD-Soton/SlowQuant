@@ -187,6 +187,12 @@ class Optimizers:
                 raise ValueError(
                     f"Expected option 'temperature' in extra_options, got {extra_options.keys()}"
                 )
+            if "n_iter" not in extra_options:
+                raise ValueError(f"Expected option 'n_iter' in extra_options, got {extra_options.keys()}")
+            if "acc_rate" not in extra_options:
+                raise ValueError(
+                    f"Expected option 'temperature' in extra_options, got {extra_options.keys()}"
+                )
             if "step_size" not in extra_options:
                 raise ValueError(f"Expected option 'step_size' in extra_options, got {extra_options.keys()}")
             bh_extras = {"tol": self.tol, "maxiter": self.maxiter, "grad": self.grad}
@@ -195,8 +201,8 @@ class Optimizers:
                 extra_options["step_size"],
                 local_minimiser=extra_options["local_minimiser"],
                 local_min_options=bh_extras,
-                acc_rate=0.5,
-                n_iter=12,
+                acc_rate=extra_options["acc_rate"],
+                n_iter=extra_options["n_iter"],
                 is_silent=self.is_silent,
                 energy_eval_callback=self.energy_eval_callback,
                 std_callback=self.std_callback,
@@ -601,8 +607,6 @@ class BasinHopping:
         self.targ_acc_rate = acc_rate
         self.n_iter = n_iter
 
-        # TODO: n_iter_success?
-
         self.is_silent = is_silent
         self.energy_eval_callback = energy_eval_callback
         self.std_callback = std_callback
@@ -611,6 +615,8 @@ class BasinHopping:
         self.tol = local_min_options["tol"]
         self.maxiter = local_min_options["maxiter"]
         self.grad = local_min_options["grad"]
+
+        self.success = True
 
     def minimize(
         self,
@@ -679,8 +685,8 @@ class BasinHopping:
         res = Result()
         res.fun = best_e
         res.x = best_x
-
-        # TODO: think about how to measure success of a basinhopping run
+        res.success = self.success
+        res.message = "At least one BH run failed." if not self.success else ""
 
         return res
 
@@ -747,6 +753,7 @@ class BasinHopping:
                 callback=print_progress,
                 options={"maxiter": self.maxiter, "disp": True},
             )
+        self.success = self.success and res.success
 
         return res.fun, res.x
 
