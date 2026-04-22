@@ -197,7 +197,9 @@ class Optimizers:
                 local_min_options=bh_extras,
                 acc_rate=0.5,
                 n_iter=12,
-                callback=print_progress,
+                is_silent=self.is_silent,
+                energy_eval_callback=self.energy_eval_callback,
+                std_callback=self.std_callback,
             )
             res = optimiser.minimize(self.fun, x0)
 
@@ -561,6 +563,9 @@ def reconstructed_f_derivative(
 
 
 class BasinHopping:
+    _start: float
+    _iteration: int
+
     def __init__(
         self,
         temperature: float,
@@ -569,7 +574,9 @@ class BasinHopping:
         local_minimiser: str,
         local_min_options: dict,
         acc_rate: float = 0.5,
-        callback: Callable[[list[float]], None] | None = None,
+        is_silent: bool = False,
+        energy_eval_callback: Callable[[], int] | None = None,
+        std_callback: Callable[[], float] | None = None,
     ):
         """Initialise the basinhopping class with hyperparameters.
 
@@ -585,7 +592,9 @@ class BasinHopping:
                 *grad: Gradient function/matrix for local minimiser.
 
             acc_rate (float): The target acceptance rate to aim for. Stepsize will be adjusted to try and maintain this.
-            callback (Callable[[list[float]], None] | None, optional): Callback function, takes only x (parameters) as an argument. Defaults to None.
+            is_silent: Suppress progress output.
+            energy_eval_callback: Callback to fetch num_energy_evals.
+            std_callback: Callback to fetch std.
         """
         self.temperature = temperature
         self.step_size = step_size
@@ -594,7 +603,9 @@ class BasinHopping:
 
         # TODO: n_iter_success?
 
-        self._callback = callback
+        self.is_silent = is_silent
+        self.energy_eval_callback = energy_eval_callback
+        self.std_callback = std_callback
         self.local_minimiser = local_minimiser.lower()
 
         self.tol = local_min_options["tol"]
@@ -615,6 +626,10 @@ class BasinHopping:
         Returns:
             Result: The resulting best energy and respective paramters.
         """
+        # For first minimisation
+        self._start = time.time()
+        self._iteration = 0
+
         # find first local min
         current_e, current_x = self._find_local_min(fun, x0)
         best_x = current_x
@@ -623,10 +638,20 @@ class BasinHopping:
         n_iter = 0
         accepted: list[int] = []
         while n_iter < self.n_iter:
+            # For callback printing
+            self._start = time.time()
+            self._iteration = 0
+
             # random theta update in the range -pi to pi?
             rndm = np.random.default_rng()
             x_pertubated = current_x + (rndm.random(len(current_x)) * 2 * np.pi * self.step_size).tolist()
             x_pertubated = [x - (2 * np.pi) if x > (2 * np.pi) else x for x in x_pertubated]
+
+            print(
+                "--------Iteration # | Iteration time [s] | Electronic energy [Hartree] | Energy measurement #"
+            )
+            print(f"Basin Hop No. {n_iter} Thetas: ")
+            print(x_pertubated)
 
             # local minimisation of this random purtabation
             new_e, new_x = self._find_local_min(fun, x_pertubated)
@@ -649,6 +674,7 @@ class BasinHopping:
 
             # adjsut stepsize according to target acceptance rate
             self._adjust_stepsize(accepted)
+            n_iter += 1
 
         res = Result()
         res.fun = best_e
@@ -691,6 +717,7 @@ class BasinHopping:
         """
         # TODO: find way to return error messages
 
+        print_progress = partial(self._print_progress, fun=fun, silent=False)
         if self.local_minimiser in ("bfgs", "l-bfgs-b", "slsqp"):
             if self.grad is not None:
                 res = scipy.optimize.minimize(
@@ -699,7 +726,7 @@ class BasinHopping:
                     jac=self.grad,
                     method=self.local_minimiser,
                     tol=self.tol,
-                    callback=self._callback,
+                    callback=print_progress,
                     options={"maxiter": self.maxiter, "disp": True},
                 )
             else:
@@ -708,7 +735,7 @@ class BasinHopping:
                     x0,
                     method=self.local_minimiser,
                     tol=self.tol,
-                    callback=self._callback,
+                    callback=print_progress,
                     options={"maxiter": self.maxiter, "disp": True},
                 )
         elif self.local_minimiser in ("cobyla", "cobyqa"):
@@ -717,13 +744,13 @@ class BasinHopping:
                 x0,
                 method=self.local_minimiser,
                 tol=self.tol,
-                callback=self._callback,
+                callback=print_progress,
                 options={"maxiter": self.maxiter, "disp": True},
             )
 
         return res.fun, res.x
 
-    def _adjust_stepsize(self, accepted: list[int], adjust_factor: float = 0.5):
+    def _adjust_stepsize(self, accepted: list[int], adjust_factor: float = 0.1):
         """Adjust the stepsize according to the target acceptance rate.
 
         Args:
@@ -739,3 +766,34 @@ class BasinHopping:
                 self.step_size -= adjust_factor
 
         print(f"Stepsize adjusted to {self.step_size}")
+
+    def _print_progress(
+        self, x: Sequence[float], fun: Callable[[list[float]], float | np.ndarray], silent: bool = False
+    ) -> None:
+        """Print progress during BH optimization.
+
+        Args:
+            x: Parameters.
+            fun: Function.
+            silent: Silence progress print.
+        """
+        if not silent:
+            e = fun(list(x))
+            if isinstance(e, np.ndarray):
+                e_str = f"{np.mean(e):3.16f}"
+            else:
+                e_str = f"{e:3.16f}"
+            time_str = f"{time.time() - self._start:7.2f}"
+            evals_str = ""
+            if self.energy_eval_callback:
+                evals_str = str(self.energy_eval_callback())
+            std_str = ""
+            if self.std_callback is not None:
+                var = self.std_callback()
+                if var is not None:
+                    std_str = f" | {np.sqrt(var):.6e}"
+            print(
+                f"--------{str(self._iteration + 1).center(11)} | {time_str.center(18)} | {e_str.center(27)} | {evals_str.center(20)}{std_str}"
+            )
+            self._iteration += 1
+            self._start = time.time()
