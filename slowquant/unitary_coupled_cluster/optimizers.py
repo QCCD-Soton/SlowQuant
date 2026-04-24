@@ -176,7 +176,7 @@ class Optimizers:
             else:
                 res = optimizer.minimize(self.fun, x0, grad=self.grad)
 
-        elif self.method in ("basinhopping"):
+        elif self.method in ("basinhopping", "bh", "bhparalleltempering", "bhpt"):
             if not isinstance(extra_options, dict):
                 raise TypeError("extra_options is not set, but is required for Basinhopping")
             if "local_minimiser" not in extra_options:
@@ -196,17 +196,42 @@ class Optimizers:
             if "step_size" not in extra_options:
                 raise ValueError(f"Expected option 'step_size' in extra_options, got {extra_options.keys()}")
             bh_extras = {"tol": self.tol, "maxiter": self.maxiter, "grad": self.grad}
-            optimiser = BasinHopping(
-                extra_options["temperature"],
-                extra_options["step_size"],
-                local_minimiser=extra_options["local_minimiser"],
-                local_min_options=bh_extras,
-                acc_rate=extra_options["acc_rate"],
-                n_iter=extra_options["n_iter"],
-                is_silent=self.is_silent,
-                energy_eval_callback=self.energy_eval_callback,
-                std_callback=self.std_callback,
-            )
+            optimiser: BasinHopping | BHParallelTempering
+            if self.method in ("basinhopping", "BH"):
+                optimiser = BasinHopping(
+                    extra_options["temperature"],
+                    extra_options["step_size"],
+                    local_minimiser=extra_options["local_minimiser"],
+                    local_min_options=bh_extras,
+                    acc_rate=extra_options["acc_rate"],
+                    n_iter=extra_options["n_iter"],
+                    is_silent=self.is_silent,
+                    energy_eval_callback=self.energy_eval_callback,
+                    std_callback=self.std_callback,
+                )
+            else:
+                if "n_swaps" not in extra_options:
+                    raise ValueError(
+                        f"Expected option 'n_swaps' in extra_options, got {extra_options.keys()}"
+                    )
+                if "is_parallel" not in extra_options:
+                    raise ValueError(
+                        f"Expected option 'is_parallel' in extra_options, got {extra_options.keys()}"
+                    )
+
+                optimiser = BHParallelTempering(
+                    extra_options["temperature"],
+                    extra_options["step_size"],
+                    local_minimiser=extra_options["local_minimiser"],
+                    local_min_options=bh_extras,
+                    minima_acc_rate=extra_options["acc_rate"],
+                    n_iter=extra_options["n_iter"],
+                    n_swaps=extra_options["n_swaps"],
+                    is_parallel=extra_options["is_parallel"],
+                    is_silent=self.is_silent,
+                    energy_eval_callback=self.energy_eval_callback,
+                    std_callback=self.std_callback,
+                )
             res = optimiser.minimize(self.fun, x0)
 
         else:
@@ -583,6 +608,7 @@ class BasinHopping:
         is_silent: bool = False,
         energy_eval_callback: Callable[[], int] | None = None,
         std_callback: Callable[[], float] | None = None,
+        parallel_replica: bool = False,
     ):
         """Initialise the basinhopping class with hyperparameters.
 
@@ -601,6 +627,7 @@ class BasinHopping:
             is_silent: Suppress progress output.
             energy_eval_callback: Callback to fetch num_energy_evals.
             std_callback: Callback to fetch std.
+            parallel_replica: True if the BH object is a part of a parallel tempering run.
         """
         self.temperature = temperature
         self.step_size = step_size
@@ -616,7 +643,15 @@ class BasinHopping:
         self.maxiter = local_min_options["maxiter"]
         self.grad = local_min_options["grad"]
 
+        # True if a replica in a BHPT run.
+        self.parallel_replica = parallel_replica
+        self.full_printout: str = ""
+
         self.success = True
+        self.current_e: float = 0
+        self.current_x: Sequence[float] = []
+
+        self.best_result = Result()
 
     def minimize(
         self,
@@ -637,9 +672,9 @@ class BasinHopping:
         self._iteration = 0
 
         # find first local min
-        current_e, current_x = self._find_local_min(fun, x0)
-        best_x = current_x
-        best_e = current_e
+        self.current_e, self.current_x = self._find_local_min(fun, x0)
+        best_x = self.current_x
+        best_e = self.current_e
 
         n_iter = 0
         accepted: list[int] = []
@@ -650,7 +685,9 @@ class BasinHopping:
 
             # random theta update in the range -pi to pi?
             rndm = np.random.default_rng()
-            x_pertubated = current_x + (rndm.random(len(current_x)) * 2 * np.pi * self.step_size).tolist()
+            x_pertubated = (
+                self.current_x + (rndm.random((len(self.current_x))) * 2 * np.pi * self.step_size).tolist()
+            )
             x_pertubated = [x - (2 * np.pi) if x > (2 * np.pi) else x for x in x_pertubated]
 
             print(
@@ -663,32 +700,31 @@ class BasinHopping:
             new_e, new_x = self._find_local_min(fun, x_pertubated)
 
             # accept with acceptance criteria below
-            accept = self._accept_move(new_e, current_e)
+            accept = self._accept_move(new_e, self.current_e)
             if accept:
                 print("Random Move Accepted")
-                current_e = new_e
-                current_x = new_x
+                self.current_e = new_e
+                self.current_x = new_x
                 accepted.append(1)
             else:
                 print("Random Move Rejected")
                 accepted.append(0)
 
             # Update best found so far for recordkeeping
-            if current_e < best_e:
-                best_e = current_e
-                best_x = current_x
+            if self.current_e < best_e:
+                best_e = self.current_e
+                best_x = self.current_x
 
             # adjsut stepsize according to target acceptance rate
             self._adjust_stepsize(accepted)
             n_iter += 1
 
-        res = Result()
-        res.fun = best_e
-        res.x = best_x
-        res.success = self.success
-        res.message = "At least one BH run failed." if not self.success else ""
+        self.best_result.fun = best_e
+        self.best_result.x = best_x
+        self.best_result.success = self.success
+        self.best_result.message = "At least one BH run failed." if not self.success else ""
 
-        return res
+        return self.best_result
 
     def _accept_move(self, new_e: float, current_e: float) -> bool:
         """Calculates the metropolis acceptance probability to decide if a move is accepted or rejected.
@@ -799,8 +835,206 @@ class BasinHopping:
                 var = self.std_callback()
                 if var is not None:
                     std_str = f" | {np.sqrt(var):.6e}"
-            print(
-                f"--------{str(self._iteration + 1).center(11)} | {time_str.center(18)} | {e_str.center(27)} | {evals_str.center(20)}{std_str}"
-            )
+
+            iteration_str = f"--------{str(self._iteration + 1).center(11)} | {time_str.center(18)} | {e_str.center(27)} | {evals_str.center(20)}{std_str}"
+
+            if not self.parallel_replica:
+                print(iteration_str)
+            else:
+                self.full_printout += iteration_str + "\n"
+
             self._iteration += 1
             self._start = time.time()
+
+
+class BHParallelTempering:
+    def __init__(
+        self,
+        temperatures: list[float],
+        step_size: float,
+        n_iter: int,
+        n_swaps: int,
+        local_minimiser: str,
+        local_min_options: dict,
+        minima_acc_rate: float = 0.5,
+        is_parallel: bool = False,
+        is_silent: bool = False,
+        energy_eval_callback: Callable[[], int] | None = None,
+        std_callback: Callable[[], float] | None = None,
+    ):
+        """Initialise the BH parallel tempering class with hyperparameters.
+
+        Args:
+        temperatures (list[float]): Temperatures of the basinhopping runs.
+        step_size (float): Stepsize of random pertubation.
+        n_iter (int): Number of basin_hopping iterations to peform. Will perform (n_iter + 1) * n_swaps.
+        n_swaps (int): Number of swaps to perform.
+        local_minimiser (str): The name of the local minimiser to use.
+
+        local_min_options (dict): Extra options for the local minimiser.
+            *tol: Tolerance for convergance of local minimiser.
+            *maxiter: Maximum number of iterations for local minimiser.
+            *grad: Gradient function/matrix for local minimiser.
+
+        minima_acc_rate (float): The target acceptance rate to aim for. Stepsize will be adjusted to try and maintain this.
+        is_silent: Suppress progress output.
+        is_parallel (bool, optional): True if the minimisation should be done in paralell. Defaults to False, so will run serially if not set.
+        energy_eval_callback: Callback to fetch num_energy_evals.
+        std_callback: Callback to fetch std.
+        parallel_replica: True if the BH object is a part of a parallel tempering run.
+        """
+        self.temperatures = temperatures
+        self.step_size = step_size
+        self.targ_acc_rate = minima_acc_rate
+        self.n_iter = n_iter
+        self.n_swaps = n_swaps
+
+        self.is_parallel = is_parallel
+
+        self.is_silent = is_silent
+        self.energy_eval_callback = energy_eval_callback
+        self.std_callback = std_callback
+        self.local_minimiser = local_minimiser.lower()
+
+        self.local_min_opt = local_min_options
+
+        self.success = True
+        self.BH_replicas: list[BasinHopping] = []
+
+    def minimize(
+        self,
+        fun: Callable[[list[float]], float | np.ndarray],
+        x0: Sequence[float],
+    ) -> Result:
+        """Performs a sequence of basinhopping parallel temprering steps.
+
+        Args:
+            fun: Function to be minimized, can only take one argument.
+            x0: Initial guess of changeable parameters of f.
+
+        Returns:
+            Result: The resulting best energy and respective paramters from the best replica.
+        """
+        # instantiate multiple BH objects
+
+        for t in self.temperatures:
+            self.BH_replicas.append(
+                BasinHopping(
+                    t,
+                    self.step_size,
+                    self.n_iter,
+                    self.local_minimiser,
+                    self.local_min_opt,
+                    self.targ_acc_rate,
+                    self.is_silent,
+                    self.energy_eval_callback,
+                    self.std_callback,
+                    parallel_replica=True,
+                )
+            )
+
+        if not self.is_parallel:
+            res = self._serial_minimise(fun, x0)
+
+        return res
+
+    def _serial_minimise(
+        self,
+        fun: Callable[[list[float]], float | np.ndarray],
+        x0: Sequence[float],
+    ) -> Result:
+        """Performs Basinhopping parallel tempering serially.
+
+        Args:
+            fun (Callable[[list[float]], float  |  np.ndarray]): The function to minimise.
+            x0 (Sequence[float]): The initial changable parameters of f.
+
+        Returns:
+            Result: The resulting best energy and respective paramters from the best replica.
+        """
+        swaps = 0
+        no_replicas = len(self.BH_replicas)
+
+        for i in range(no_replicas):
+            self.BH_replicas[i].current_x = x0
+
+        while swaps < self.n_swaps:
+            for i in range(no_replicas):
+                _ = self.BH_replicas[i].minimize(fun, self.BH_replicas[i].current_x)
+
+            # choose random swap
+            rndm = np.random.default_rng()
+            rndm_swap = rndm.integers(0, no_replicas - 2)
+
+            self._print_progress()
+
+            print(
+                f"ATTEMPTING SWAP BETWEEN {self.temperatures[rndm_swap]} and {self.temperatures[rndm_swap + 1]}"
+            )
+            # choose to accept swap w probability below. (SWAP THETAS)
+            accept_swap = self._accept_swap(
+                self.BH_replicas[rndm_swap].current_e,
+                self.BH_replicas[rndm_swap + 1].current_e,
+                self.temperatures[rndm_swap],
+                self.temperatures[rndm_swap + 1],
+            )
+
+            if accept_swap:
+                print("SWAP ACCEPTED")
+                temp_x0 = self.BH_replicas[rndm_swap].current_x
+                self.BH_replicas[rndm_swap] = self.BH_replicas[rndm_swap + 1]
+                self.BH_replicas[rndm_swap + 1] = temp_x0
+            else:
+                print("SWAP REJECTED")
+
+            swaps += 1
+
+        return self._find_best()
+
+    def _find_best(self) -> Result:
+        """Finds the best energy from all the replicas.
+
+        Returns:
+            Result: The Result containing the results from the best replica.
+        """
+        best_e = self.BH_replicas[0].best_result.fun
+        best_rep = self.BH_replicas[0]
+
+        for replica in self.BH_replicas:
+            if replica.best_result.fun < best_e:
+                best_e = replica.best_result.fun
+                best_rep = replica
+
+        print(f"Best result from replica with temperature {best_rep.temperature}")
+
+        return best_rep.best_result
+
+    def _accept_swap(self, e_1: float, e_2: float, t_1: float, t_2: float) -> bool:
+        """Calculates the metropolis acceptance probability to decide if a swap is accepted or rejected.
+
+        Args:
+            e_1 (float): Minimum energy of first replica.
+            e_2 (float): Minimum enery of second replica.
+            t_1 (float): Temperature of first replica.
+            t_2 (float): Temperature of second replica.
+
+        Returns:
+            bool: True if accept swap, False if reject swap.
+        """
+        inv_t1 = 1 / t_1
+        inv_t2 = 1 / t_2
+        metropolis = np.exp((inv_t1 - inv_t2) * (e_1 - e_2))
+        p = min(1, metropolis)
+
+        rndm = np.random.default_rng()
+        if rndm.random(1)[0] < p:
+            return True
+        else:
+            return False
+
+    def _print_progress(self):
+        """Prints out in bulk the output from one BHPT 'swap'."""
+        for replica in self.BH_replicas:
+            print(f"Basinhops from replica with temperature {replica.temperature}")
+            print(replica.full_printout)
+            print()
