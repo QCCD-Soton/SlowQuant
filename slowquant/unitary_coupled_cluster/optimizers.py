@@ -906,7 +906,7 @@ class BHParallelTempering:
         fun: Callable[[list[float]], float | np.ndarray],
         x0: Sequence[float],
     ) -> Result:
-        """Performs a sequence of basinhopping parallel temprering steps.
+        """Performs a sequence of basinhopping parallel temperring steps.
 
         Args:
             fun: Function to be minimized, can only take one argument.
@@ -964,7 +964,7 @@ class BHParallelTempering:
 
             # choose random swap
             rndm = np.random.default_rng()
-            rndm_swap = rndm.integers(0, no_replicas - 2)
+            rndm_swap = rndm.integers(0, no_replicas - 1)
 
             self._print_progress()
 
@@ -982,8 +982,8 @@ class BHParallelTempering:
             if accept_swap:
                 print("SWAP ACCEPTED")
                 temp_x0 = self.BH_replicas[rndm_swap].current_x
-                self.BH_replicas[rndm_swap] = self.BH_replicas[rndm_swap + 1]
-                self.BH_replicas[rndm_swap + 1] = temp_x0
+                self.BH_replicas[rndm_swap].current_x = self.BH_replicas[rndm_swap + 1].current_x
+                self.BH_replicas[rndm_swap + 1].current_x = temp_x0
             else:
                 print("SWAP REJECTED")
 
@@ -1000,7 +1000,9 @@ class BHParallelTempering:
         best_e = self.BH_replicas[0].best_result.fun
         best_rep = self.BH_replicas[0]
 
-        for replica in self.BH_replicas:
+        print(self.BH_replicas)
+        for r in range(len(self.BH_replicas)):
+            replica = self.BH_replicas[r]
             if replica.best_result.fun < best_e:
                 best_e = replica.best_result.fun
                 best_rep = replica

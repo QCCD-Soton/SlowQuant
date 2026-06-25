@@ -996,7 +996,7 @@ class WaveFunctionUPS:
                     "f_rotosolve_optimized": self._calc_energy_rotosolve_optimization,
                 },
             )
-        elif optimizer_name.lower() in ("basinhopping"):
+        elif optimizer_name.lower() in ("basinhopping", "bhpt"):
             res = optimizer.minimize(parameters, extra_options=bh_params)
         else:
             res = optimizer.minimize(
