@@ -1264,7 +1264,10 @@ class WaveFunctionUPS:
                     self.ups_layout,
                 )
 
-        self.num_energy_evals += 2 * np.sum(list(self.ups_layout.grad_param_R.values()))
+        shift_counts = np.array(
+            [2 * self.ups_layout.grad_param_R[param_name] for param_name in self.ups_layout.param_names]
+        )
+        self.num_energy_evals += int(np.sum(np.triu(np.outer(shift_counts, shift_counts))))
         return (hessian + hessian.T) / 2
 
     def _calc_energy_rotosolve_optimization(
