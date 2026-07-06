@@ -1094,6 +1094,179 @@ class WaveFunctionUPS:
             )  # Count energy measurements for all gradients
         return gradient
 
+    def _calc_hessian_optimization(
+        self, parameters: list[float], theta_optimization: bool, kappa_optimization: bool
+    ) -> np.ndarray:
+        """Calculate electronic Hessian with respect to UPS parameters.
+
+        Args:
+            parameters: Ansatz and orbital rotation parameters.
+            theta_optimization: If used in theta optimization.
+            kappa_optimization: If used in kappa optimization.
+
+        Returns:
+            Electronic Hessian.
+        """
+        if kappa_optimization:
+            raise NotImplementedError("Analytical Hessian for orbital-rotation parameters is not implemented.")
+        if not theta_optimization:
+            return np.zeros((len(parameters), len(parameters)))
+
+        self.thetas = parameters
+        hessian = np.zeros((len(parameters), len(parameters)))
+        Hamiltonian = hamiltonian_0i_0a(
+            self.h_mo,
+            self.g_mo,
+            self.num_inactive_orbs,
+            self.num_active_orbs,
+        )
+
+        def propagate_unitary_dagger(state: np.ndarray, idx: int) -> np.ndarray:
+            """Apply the Hermitian adjoint of one UPS unitary."""
+            thetas_dagger = self.thetas
+            thetas_dagger[idx] *= -1
+            return propagate_unitary(state, idx, self.ci_info, thetas_dagger, self.ups_layout)
+
+        # Reference adjoint state (no differentiations).
+        adjoint_state = propagate_state([Hamiltonian], self.ci_coeffs, self.ci_info)
+        adjoint_state = construct_ups_state(
+            adjoint_state,
+            self.ci_info,
+            self.thetas,
+            self.ups_layout,
+            dagger=True,
+        )
+
+        for j in range(len(self.thetas)):
+            # Forward sensitivity of the final UPS state with respect to theta_j.
+            ket_vec = np.copy(self.csf_coeffs)
+            ket_deriv = np.zeros_like(self.csf_coeffs)
+            for i in range(len(self.thetas)):
+                ket_vec_old = ket_vec
+                ket_deriv = propagate_unitary(
+                    ket_deriv,
+                    i,
+                    self.ci_info,
+                    self.thetas,
+                    self.ups_layout,
+                )
+                if i == j:
+                    ket_deriv += propagate_unitary(
+                        get_grad_action(
+                            ket_vec_old,
+                            i,
+                            self.ci_info,
+                            self.ups_layout,
+                        ),
+                        i,
+                        self.ci_info,
+                        self.thetas,
+                        self.ups_layout,
+                    )
+                ket_vec = propagate_unitary(
+                    ket_vec_old,
+                    i,
+                    self.ci_info,
+                    self.thetas,
+                    self.ups_layout,
+                )
+
+            # Reverse sensitivity of U^\dagger H U |CSF> with respect to theta_j.
+            bra_vec = propagate_state([Hamiltonian], ket_vec, self.ci_info)
+            bra_deriv = propagate_state([Hamiltonian], ket_deriv, self.ci_info)
+            for i in range(len(self.thetas) - 1, -1, -1):
+                bra_vec = propagate_unitary_dagger(bra_vec, i)
+                bra_deriv = propagate_unitary_dagger(bra_deriv, i)
+                if i == j:
+                    bra_deriv -= get_grad_action(
+                        bra_vec,
+                        i,
+                        self.ci_info,
+                        self.ups_layout,
+                    )
+
+            # Differentiate the adjoint gradient sweep.
+            bra_vec = np.copy(adjoint_state)
+            ket_vec = np.copy(self.csf_coeffs)
+            ket_deriv = np.zeros_like(self.csf_coeffs)
+            for i in range(len(self.thetas)):
+                differentiated_ket_action = get_grad_action(
+                    ket_deriv,
+                    i,
+                    self.ci_info,
+                    self.ups_layout,
+                )
+                ket_action = get_grad_action(
+                    ket_vec,
+                    i,
+                    self.ci_info,
+                    self.ups_layout,
+                )
+                hessian[i, j] = 2 * (
+                    np.matmul(bra_deriv, ket_action) + np.matmul(bra_vec, differentiated_ket_action)
+                )
+
+                bra_vec_old = bra_vec
+                bra_deriv = propagate_unitary(
+                    bra_deriv,
+                    i,
+                    self.ci_info,
+                    self.thetas,
+                    self.ups_layout,
+                )
+                if i == j:
+                    bra_deriv += propagate_unitary(
+                        get_grad_action(
+                            bra_vec_old,
+                            i,
+                            self.ci_info,
+                            self.ups_layout,
+                        ),
+                        i,
+                        self.ci_info,
+                        self.thetas,
+                        self.ups_layout,
+                    )
+                bra_vec = propagate_unitary(
+                    bra_vec_old,
+                    i,
+                    self.ci_info,
+                    self.thetas,
+                    self.ups_layout,
+                )
+
+                ket_vec_old = ket_vec
+                ket_deriv = propagate_unitary(
+                    ket_deriv,
+                    i,
+                    self.ci_info,
+                    self.thetas,
+                    self.ups_layout,
+                )
+                if i == j:
+                    ket_deriv += propagate_unitary(
+                        get_grad_action(
+                            ket_vec_old,
+                            i,
+                            self.ci_info,
+                            self.ups_layout,
+                        ),
+                        i,
+                        self.ci_info,
+                        self.thetas,
+                        self.ups_layout,
+                    )
+                ket_vec = propagate_unitary(
+                    ket_vec_old,
+                    i,
+                    self.ci_info,
+                    self.thetas,
+                    self.ups_layout,
+                )
+
+        self.num_energy_evals += 2 * np.sum(list(self.ups_layout.grad_param_R.values()))
+        return (hessian + hessian.T) / 2
+
     def _calc_energy_rotosolve_optimization(
         self,
         parameters: list[float],
