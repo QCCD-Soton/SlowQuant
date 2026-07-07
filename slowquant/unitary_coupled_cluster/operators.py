@@ -758,7 +758,7 @@ def S_plus(num_inactive: int, num_active: int, minus: bool = False) -> Fermionic
 
     S_op = FermionicOperator({})
 
-    # Over  active orbitals.
+    # Over active orbitals as inactive and virtual contributions are zero
     for i in range(num_inactive, num_inactive + num_active):
         S_op += a_op(i, spin1, True) * a_op(i, spin2, False)
 
