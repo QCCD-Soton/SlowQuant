@@ -736,13 +736,14 @@ def one_elec_op_1i_1a(
     return one_elec_op
 
 
-def S_plus(num_inactive: int, num_active: int, minus: bool = False) -> FermionicOperator:
+def S_ladder(num_inactive: int, num_active: int, minus: bool = False) -> FermionicOperator:
     """Spin raising and spin lowering. Acts only on active orbitals.
 
     Args:
         num_inactive (int): Number of inactive spatial orbitals.
         num_active (int): Number of active spatial orbitals.
-        minus (bool, optional): If True will switch to spin lowering operator. Defaults to False.
+        minus (bool, optional): If True will switch to spin lowering operator. Defaults to False which will result
+                                in the spin raising operator.
 
     Returns:
         FermionicOperator: The Spin lowering or raising operator specified.
@@ -777,7 +778,7 @@ def S_z(num_inactive: int, num_active: int) -> FermionicOperator:
     """
     op = FermionicOperator({})
 
-    # Over  active orbitals.
+    # Over active orbitals as inactive and virtual contributions are zero
     for i in range(num_inactive, num_inactive + num_active):
         op += a_op(i, "alpha", True) * a_op(i, "alpha", False) - a_op(i, "beta", True) * a_op(
             i, "beta", False
@@ -797,8 +798,8 @@ def S2_op(num_inactive: int, num_active: int) -> FermionicOperator:
     Returns:
         FermionicOperator: S^2 operator.
     """
-    Sp = S_plus(num_inactive, num_active, minus=False)
-    Sm = S_plus(num_inactive, num_active, minus=True)
+    Sp = S_ladder(num_inactive, num_active, minus=False)
+    Sm = S_ladder(num_inactive, num_active, minus=True)
     Sz = S_z(num_inactive, num_active)
 
     return Sp * Sm + Sz * Sz - Sz
