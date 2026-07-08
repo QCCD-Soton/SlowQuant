@@ -76,6 +76,8 @@ class WaveFunctionSACircuit:
         self.num_spin_orbs = 2 * len(self.int_gen.kinetic_energy)
         self.num_orbs = len(self.int_gen.kinetic_energy)
         self.num_active_elec = cas[0]
+        if self.num_active_elec % 2 != 0:
+            raise ValueError("Number of active electrons has to be even")
         self.num_active_elec_alpha = self.num_active_elec // 2
         self.num_active_elec_beta = self.num_active_elec // 2
         self.num_active_spin_orbs = 0
@@ -199,6 +201,8 @@ class WaveFunctionSACircuit:
         self.states = states
         # Setup Qiskit stuff
         self.QI = quantum_interface
+        if self.QI.ansatz_options.get("do_pp"):
+            raise ValueError("perfect pairing is not supported for Ansatz in SA UPS wave functions.")
         self.QI.construct_circuit(
             self.active_occ_idx_shifted,
             self.active_unocc_idx_shifted,
@@ -485,7 +489,7 @@ class WaveFunctionSACircuit:
         self,
         optimizer_name: str,
         orbital_optimization: bool = False,
-        tol: float = 1e-10,
+        tol: float = 1e-6,
         maxiter: int = 1000,
         is_silent_subiterations: bool = False,
     ) -> None:
@@ -516,7 +520,7 @@ class WaveFunctionSACircuit:
                 print(
                     "--------Iteration # | Iteration time [s] | Electronic energy [Hartree] | Energy measurement #"
                 )
-            if optimizer_name.lower() in ("rotosolve",):
+            if optimizer_name.lower() in ("rotosolve", "rotosolve_grad"):
                 # For RotoSolve type solvers the energy per state is needed in the optimization,
                 # instead of only the state-averaged energy.
                 energy_theta = partial(
@@ -611,7 +615,7 @@ class WaveFunctionSACircuit:
         self,
         optimizer_name: str,
         orbital_optimization: bool = False,
-        tol: float = 1e-10,
+        tol: float = 1e-6,
         maxiter: int = 1000,
     ) -> None:
         """Run one step optimization of wave function.
@@ -628,7 +632,7 @@ class WaveFunctionSACircuit:
         if orbital_optimization:
             print(f"### Number kappa: {len(self.kappa)}")
         print(f"### Number theta: {len(self.thetas)}")
-        if optimizer_name.lower() == "rotosolve":
+        if optimizer_name.lower() in ("rotosolve", "rotosolve_grad"):
             if orbital_optimization and len(self.kappa) != 0:
                 raise ValueError(
                     "Cannot use RotoSolve together with orbital optimization in the one-step solver."
@@ -676,7 +680,7 @@ class WaveFunctionSACircuit:
                 parameters = self.kappa
         else:
             parameters = self.thetas
-        if optimizer_name.lower() in ("rotosolve",):
+        if optimizer_name.lower() in ("rotosolve", "rotosolve_grad"):
             # For RotoSolve type solvers the energy per state is needed in the optimization,
             # instead of only the state-averaged energy.
             energy = partial(

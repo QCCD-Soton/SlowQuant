@@ -22,6 +22,7 @@ from slowquant.unitary_coupled_cluster.density_matrix import (
 from slowquant.unitary_coupled_cluster.fermionic_operator import FermionicOperator
 from slowquant.unitary_coupled_cluster.integral_manager import IntegralManager
 from slowquant.unitary_coupled_cluster.operator_state_algebra import (
+    build_operator_matrix,
     construct_ups_state,
     expectation_value,
     get_grad_action,
@@ -30,7 +31,7 @@ from slowquant.unitary_coupled_cluster.operator_state_algebra import (
     propagate_unitary,
     propagate_unitary_SA,
 )
-from slowquant.unitary_coupled_cluster.operators import Epq, hamiltonian_0i_0a
+from slowquant.unitary_coupled_cluster.operators import Epq, S2_op, hamiltonian_0i_0a
 from slowquant.unitary_coupled_cluster.optimizers import Optimizers
 from slowquant.unitary_coupled_cluster.util import UpsStructure
 
@@ -62,7 +63,6 @@ class WaveFunctionUPS:
             raise ValueError(f"cas must have two elements, got {len(cas)} elements.")
         # Init stuff
         self.int_gen = IntegralManager(integral_generator)
-        self._c_mo = mo_coeffs
         self.inactive_spin_idx = []
         self.virtual_spin_idx = []
         self.active_spin_idx = []
@@ -115,6 +115,8 @@ class WaveFunctionUPS:
             else:
                 self.virtual_spin_idx.append(i)
                 self.num_virtual_spin_orbs += 1
+        if self.num_active_elec % 2 != 0:
+            raise ValueError("Number of active electrons has to be even")
         self.num_active_elec_alpha = self.num_active_elec // 2
         self.num_active_elec_beta = self.num_active_elec // 2
         self.num_inactive_orbs = self.num_inactive_spin_orbs // 2
@@ -212,8 +214,54 @@ class WaveFunctionUPS:
         )
         self.num_det = len(self.ci_info.idx2det)
         self.csf_coeffs = np.zeros(self.num_det)
-        hf_det = int("1" * self.num_active_elec + "0" * (self.num_active_spin_orbs - self.num_active_elec), 2)
-        self.csf_coeffs[self.ci_info.det2idx[hf_det]] = 1
+
+        hf_det = "1" * self.num_active_elec + "0" * (self.num_active_spin_orbs - self.num_active_elec)
+        self._pp = False
+        if (
+            ansatz.lower() == "tups"
+            and "do_pp" in self.ansatz_options.keys()
+            and self.ansatz_options["do_pp"]
+        ):
+            # Obtain pp determinant
+            pp_det = ""
+            spin_orb = 0
+            elec_count = self.num_active_elec
+            while spin_orb < self.num_active_spin_orbs:
+                if (
+                    elec_count >= 2
+                    and (self.num_active_spin_orbs - spin_orb) >= 4
+                    and elec_count <= (self.num_active_spin_orbs - spin_orb - 2)
+                ):
+                    pp_det += "1100"
+                    elec_count -= 2
+                    spin_orb += 4
+                elif elec_count == 0:
+                    pp_det += "0"
+                    spin_orb += 1
+                elif elec_count != 0:
+                    pp_det += "1"
+                    spin_orb += 1
+                    elec_count -= 1
+            print("perfect-pairing determinant found as:", pp_det)
+            if len(pp_det) != self.num_active_spin_orbs or pp_det.count("1") != self.num_active_elec:
+                raise ValueError("Perfect pairing determinant violates orbital or electron numbers")
+
+            # Swap mo coefficients to resembles pp layout
+            hole = [i for i, (h, p) in enumerate(zip(hf_det, pp_det)) if h == "1" and p == "0"]
+            part = [i for i, (h, p) in enumerate(zip(hf_det, pp_det)) if h == "0" and p == "1"]
+            hole_spatial = sorted(set(i // 2 + self.num_inactive_orbs for i in hole))
+            part_spatial = sorted(set(i // 2 + self.num_inactive_orbs for i in part))
+            pp_mo_coeffs = mo_coeffs.copy()
+            pp_mo_coeffs[:, hole_spatial + part_spatial] = pp_mo_coeffs[:, part_spatial + hole_spatial]
+            self._c_mo = pp_mo_coeffs
+
+            # Assign weight to reference
+            self.csf_coeffs[self.ci_info.det2idx[int(pp_det, 2)]] = 1
+            self._pp = True
+        else:
+            self.csf_coeffs[self.ci_info.det2idx[int(hf_det, 2)]] = 1
+            self._c_mo = mo_coeffs
+
         self.ci_coeffs = np.copy(self.csf_coeffs)
         # Construct UPS Structure
         self.ups_layout = UpsStructure()
@@ -262,6 +310,8 @@ class WaveFunctionUPS:
                 self.num_active_orbs,
                 self.ansatz_options,
             )
+        elif ansatz.lower() == "none":
+            print("UPS wave function with no Ansatz was chosen.")
         else:
             raise ValueError(f"Got unknown ansatz, {ansatz}")
         self._thetas = np.zeros(self.ups_layout.n_params).tolist()
@@ -749,11 +799,19 @@ class WaveFunctionUPS:
             return H.get_qiskit_form(self.num_active_orbs)
         return H
 
+    def _get_hamiltonian_matrix(self) -> np.ndarray:
+        """Return Hamitlonian matrix.
+
+        Returns:
+            Hamiltonian matrix
+        """
+        return build_operator_matrix(FermionicOperator(self._get_hamiltonian()), self.ci_info)  # type: ignore
+
     def run_wf_optimization_2step(
         self,
         optimizer_name: str,
         orbital_optimization: bool = False,
-        tol: float = 1e-10,
+        tol: float = 1e-6,
         maxiter: int = 1000,
         is_silent_subiterations: bool = False,
     ) -> None:
@@ -803,7 +861,7 @@ class WaveFunctionUPS:
             )
             self._old_opt_parameters = np.zeros_like(self.thetas) + 10**20
             self._E_opt_old = 0.0
-            if optimizer_name.lower() == "rotosolve":
+            if optimizer_name.lower() in ("rotosolve", "rotosolve_grad"):
                 res = optimizer.minimize(
                     self.thetas,
                     extra_options={
@@ -874,7 +932,7 @@ class WaveFunctionUPS:
         self,
         optimizer_name: str,
         orbital_optimization: bool = False,
-        tol: float = 1e-10,
+        tol: float = 1e-6,
         maxiter: int = 1000,
     ) -> None:
         """Run one step optimization of wave function.
@@ -889,7 +947,7 @@ class WaveFunctionUPS:
         if orbital_optimization:
             print(f"### Number kappa: {len(self.kappa)}")
         print(f"### Number theta: {self.ups_layout.n_params}")
-        if optimizer_name.lower() == "rotosolve":
+        if optimizer_name.lower() in ("rotosolve", "rotosolve_grad"):
             if orbital_optimization and len(self.kappa) != 0:
                 raise ValueError(
                     "Cannot use RotoSolve together with orbital optimization in the one-step solver."
@@ -947,7 +1005,7 @@ class WaveFunctionUPS:
         )
         self._old_opt_parameters = np.zeros_like(parameters) + 10**20
         self._E_opt_old = 0.0
-        if optimizer_name.lower() == "rotosolve":
+        if optimizer_name.lower() in ("rotosolve", "rotosolve_grad"):
             res = optimizer.minimize(
                 parameters,
                 extra_options={
@@ -1145,3 +1203,13 @@ class WaveFunctionUPS:
         self.num_energy_evals += len(energies)
 
         return energies
+
+    def get_total_spin(self) -> float:
+        """Calculates the spin of the current state using the spin squared operator.
+
+        Returns:
+            float: The expectation value of the spin squared operator.
+        """
+        S2 = S2_op(self.num_inactive_orbs, self.num_active_orbs)
+
+        return expectation_value(self.ci_coeffs, [S2], self.ci_coeffs, self.ci_info)
