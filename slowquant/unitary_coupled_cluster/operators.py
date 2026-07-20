@@ -734,3 +734,72 @@ def one_elec_op_1i_1a(
             if abs(ints_mo[p, q]) > 10**-14:
                 one_elec_op += ints_mo[p, q] * Epq(p, q)
     return one_elec_op
+
+
+def S_ladder(num_inactive: int, num_active: int, minus: bool = False) -> FermionicOperator:
+    """Spin raising and spin lowering. Acts only on active orbitals.
+
+    Args:
+        num_inactive (int): Number of inactive spatial orbitals.
+        num_active (int): Number of active spatial orbitals.
+        minus (bool, optional): If True will switch to spin lowering operator. Defaults to False which will result
+                                in the spin raising operator.
+
+    Returns:
+        FermionicOperator: The Spin lowering or raising operator specified.
+    """
+    if minus:
+        # Lowering operator
+        spin1 = "beta"
+        spin2 = "alpha"
+    else:
+        # Raising operator
+        spin1 = "alpha"
+        spin2 = "beta"
+
+    S_op = FermionicOperator({})
+
+    # Over active orbitals as inactive and virtual contributions are zero
+    for i in range(num_inactive, num_inactive + num_active):
+        S_op += a_op(i, spin1, True) * a_op(i, spin2, False)
+
+    return S_op
+
+
+def S_z(num_inactive: int, num_active: int) -> FermionicOperator:
+    """S_z operator on active orbitals.
+
+    Args:
+        num_inactive (int): Number of inactive spatial orbitals.
+        num_active (int): Number of active spatial orbitals.
+
+    Returns:
+        FermionicOperator: Resulting S_z operator.
+    """
+    op = FermionicOperator({})
+
+    # Over active orbitals as inactive and virtual contributions are zero
+    for i in range(num_inactive, num_inactive + num_active):
+        op += a_op(i, "alpha", True) * a_op(i, "alpha", False) - a_op(i, "beta", True) * a_op(
+            i, "beta", False
+        )
+
+    S_z_op = 0.5 * op
+    return S_z_op
+
+
+def S2_op(num_inactive: int, num_active: int) -> FermionicOperator:
+    """S^2 operator applied to active orbitals.
+
+    Args:
+        num_inactive (int): Number of inactive spatial orbitals.
+        num_active (int): Number of active spatial orbitals.
+
+    Returns:
+        FermionicOperator: S^2 operator.
+    """
+    Sp = S_ladder(num_inactive, num_active, minus=False)
+    Sm = S_ladder(num_inactive, num_active, minus=True)
+    Sz = S_z(num_inactive, num_active)
+
+    return Sp * Sm + Sz * Sz - Sz

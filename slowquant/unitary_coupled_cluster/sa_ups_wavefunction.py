@@ -122,6 +122,8 @@ class WaveFunctionSAUPS:
             else:
                 self.virtual_spin_idx.append(i)
                 self.num_virtual_spin_orbs += 1
+        if self.num_active_elec % 2 != 0:
+            raise ValueError("Number of active electrons has to be even")
         self.num_active_elec_alpha = self.num_active_elec // 2
         self.num_active_elec_beta = self.num_active_elec // 2
         self.num_inactive_orbs = self.num_inactive_spin_orbs // 2
@@ -244,6 +246,8 @@ class WaveFunctionSAUPS:
         # Construct UPS Structure
         self.ups_layout = UpsStructure()
         if ansatz.lower() in ("tups", "qnp"):
+            if self.ansatz_options.get("do_pp"):
+                raise ValueError("perfect pairing is not supported for Ansatz in SA UPS wave functions.")
             if ansatz.lower() == "tups":
                 self.ansatz_options["do_tups"] = True
             elif ansatz.lower() == "qnp":
@@ -514,7 +518,7 @@ class WaveFunctionSAUPS:
         self,
         optimizer_name: str,
         orbital_optimization: bool = False,
-        tol: float = 1e-10,
+        tol: float = 1e-6,
         maxiter: int = 1000,
         is_silent_subiterations: bool = False,
     ) -> None:
@@ -564,7 +568,7 @@ class WaveFunctionSAUPS:
             )
             self._old_opt_parameters = np.zeros_like(self.thetas) + 10**20
             self._E_opt_old = 0.0
-            if optimizer_name.lower() == "rotosolve":
+            if optimizer_name.lower() in ("rotosolve", "rotosolve_grad"):
                 res = optimizer.minimize(
                     self.thetas,
                     extra_options={
@@ -637,7 +641,7 @@ class WaveFunctionSAUPS:
         self,
         optimizer_name: str,
         orbital_optimization: bool = False,
-        tol: float = 1e-10,
+        tol: float = 1e-6,
         maxiter: int = 1000,
     ) -> None:
         """Run one step optimization of wave function.
@@ -652,7 +656,7 @@ class WaveFunctionSAUPS:
         if orbital_optimization:
             print(f"### Number kappa: {len(self.kappa)}")
         print(f"### Number theta: {self.ups_layout.n_params}")
-        if optimizer_name.lower() == "rotosolve":
+        if optimizer_name.lower() in ("rotosolve", "rotosolve_grad"):
             if orbital_optimization and len(self.kappa) != 0:
                 raise ValueError(
                     "Cannot use RotoSolve together with orbital optimization in the one-step solver."
@@ -710,7 +714,7 @@ class WaveFunctionSAUPS:
         )
         self._old_opt_parameters = np.zeros_like(parameters) + 10**20
         self._E_opt_old = 0.0
-        if optimizer_name.lower() == "rotosolve":
+        if optimizer_name.lower() in ("rotosolve", "rotosolve_grad"):
             res = optimizer.minimize(
                 parameters,
                 extra_options={
@@ -1073,6 +1077,6 @@ class WaveFunctionSAUPS:
             if i % len(self.csf_coeffs) == 0:
                 idx += 1
             energies[idx] += bra @ ket
-        self.num_energy_evals += self.num_states  # count one measurement per state
+        self.num_energy_evals += self.num_states * len(energies)  # count one measurement per state
 
         return energies
