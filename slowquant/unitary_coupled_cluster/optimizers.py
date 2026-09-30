@@ -16,6 +16,7 @@ class Result:
         self.x: np.ndarray
         self.fun: float
         self.success: bool
+        self.message: str
 
 
 class Optimizers:
@@ -185,6 +186,9 @@ class Optimizers:
             print("Optimization failed.")
             if hasattr(res, "message"):
                 print(res.message)
+                result.message = res.message
+        else:
+            result.message = ""
         return result
 
 
@@ -326,6 +330,11 @@ class RotoSolve:
         res.x = np.array(x_best)
         res.fun = f_best
         res.success = success
+        if not res.success:
+            print("Rotosolve failed.")
+            res.message = "Rotosolve failed."
+        else:
+            res.message = ""
         return res
 
 
