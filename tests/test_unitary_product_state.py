@@ -5,6 +5,7 @@ import numpy as np
 import slowquant.SlowQuant as sq
 import slowquant.unitary_coupled_cluster.linear_response.allstatetransfer as allstlr
 import slowquant.unitary_coupled_cluster.linear_response.naive as naivelr
+from slowquant.unitary_coupled_cluster.operator_state_algebra import build_operator_matrix
 from slowquant.unitary_coupled_cluster.sa_ups_wavefunction import WaveFunctionSAUPS
 from slowquant.unitary_coupled_cluster.ucc_wavefunction import WaveFunctionUCC
 from slowquant.unitary_coupled_cluster.ups_wavefunction import WaveFunctionUPS
@@ -425,3 +426,68 @@ def test_total_spin() -> None:
     )
 
     assert WF.get_total_spin() == 0.0
+
+
+def test_ups_qfim() -> None:
+    """Test the UPS quantum Fisher information matrix against finite differences, LiH STO-3G."""
+    SQobj = sq.SlowQuant()
+    SQobj.set_molecule(
+        """Li 0.0           0.0  0.0;
+           H  1.6717072740  0.0  0.0;""",
+        distance_unit="angstrom",
+    )
+    SQobj.set_basis_set("STO-3G")
+    SQobj.init_hartree_fock()
+    SQobj.hartree_fock.run_restricted_hartree_fock()
+    for cas, ansatz, options in (
+        ((2, 2), "tUPS", {"n_layers": 1}),
+        ((4, 3), "SDSfUCCSD", {"n_layers": 1}),
+    ):
+        WF = WaveFunctionUPS(
+            cas,
+            SQobj.hartree_fock.mo_coeff,
+            SQobj,
+            ansatz,
+            ansatz_options=options,
+        )
+        n_params = WF.ups_layout.n_params
+        n_det = len(WF.ci_coeffs)
+        thetas = np.array([0.3 * np.sin(i + 1) - 0.1 * np.cos(2 * i + 1) for i in range(n_params)])
+        WF.thetas = thetas.tolist()
+        psi = np.copy(WF.ci_coeffs)
+        # Derivatives of the state against central finite differences
+        D = WF._calc_state_derivatives()
+        step = 10**-5
+        D_fd = np.zeros_like(D)
+        for i in range(n_params):
+            for sign in (1.0, -1.0):
+                shifted = thetas.copy()
+                shifted[i] += sign * step
+                WF.thetas = shifted.tolist()
+                D_fd[:, i] += sign * WF.ci_coeffs / (2 * step)
+        WF.thetas = thetas.tolist()
+        assert np.max(np.abs(D - D_fd)) < 10**-8
+        # Normalisation gives <psi|d_i psi> = 0
+        assert np.max(np.abs(np.matmul(D.T, psi))) < 10**-12
+        # Energy gradient from the state derivatives, dE/dtheta_i = 2 <d_i psi|H|psi>
+        H = build_operator_matrix(WF._get_hamiltonian(), WF.ci_info, do_unsafe=True)  # type: ignore
+        gradient = WF._calc_gradient_optimization(thetas.tolist(), True, False)
+        assert np.max(np.abs(2 * np.matmul(D.T, np.matmul(H, psi)) - gradient)) < 10**-10
+        # QFIM is symmetric positive semi-definite with rank at most min(n_params, n_det - 1)
+        F = WF.get_qfim()
+        assert np.max(np.abs(F - F.T)) < 10**-14
+        assert np.max(np.abs(F - 4 * WF.get_qfim(as_metric=True))) < 10**-14
+        assert np.max(np.abs(F - WF._calc_qfim_optimization(thetas.tolist(), True, False))) < 10**-14
+        eigvals = np.linalg.eigvalsh(F)
+        assert eigvals[0] > -(10**-10)
+        rank = int(np.sum(eigvals > 10**-10 * eigvals[-1]))
+        assert rank <= min(n_params, n_det - 1)
+        if ansatz == "SDSfUCCSD":
+            # The full CAS(4,3) space is reached, so the bound is saturated
+            assert rank == n_det - 1
+        # Fidelity, |<psi(theta)|psi(theta + d)>|^2 = 1 - d^T F d / 4 + O(|d|^3)
+        d = 10**-3 * np.array([np.cos(3 * i + 2) for i in range(n_params)])
+        WF.thetas = (thetas + d).tolist()
+        infidelity = 1 - np.dot(psi, WF.ci_coeffs) ** 2
+        WF.thetas = thetas.tolist()
+        assert abs(infidelity - 0.25 * np.dot(d, np.matmul(F, d))) < 10**-8

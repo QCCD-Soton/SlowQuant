@@ -1335,6 +1335,110 @@ class WaveFunctionUPS:
         self.num_energy_evals += int(np.sum(np.triu(np.outer(shift_counts, shift_counts))))
         return (hessian + hessian.T) / 2
 
+    def _calc_state_derivatives(self) -> np.ndarray:
+        r"""Calculate the derivative of the UPS state with respect to every ansatz parameter.
+
+        Using that :math:`\hat{T}_i` commutes with :math:`\boldsymbol{U}_i=\exp(\theta_i\hat{T}_i)`,
+
+        .. math::
+            \left|\partial_i\psi\right> = \boldsymbol{U}_N\cdots\boldsymbol{U}_{i+1}\boldsymbol{U}_i\hat{T}_i
+            \boldsymbol{U}_{i-1}\cdots\boldsymbol{U}_1\left|\text{CSF}\right>
+
+        The orbital rotation parameters are kept fixed.
+        Cost is N(N+1)/2 unitary applications for N parameters, there is no O(N) bra/ket trick
+        as for the gradient because the derivative vectors themselves are needed.
+
+        Returns:
+            Matrix D with D[:, i] = d|psi>/d theta_i in the CI basis.
+        """
+        n_params = self.ups_layout.n_params
+        thetas = self.thetas
+        derivatives = np.zeros((len(self.csf_coeffs), n_params))
+        # |psi_{<i}> = U_{i-1} ... U_1 |CSF>
+        ket_vec = np.copy(self.csf_coeffs)
+        for i in range(n_params):
+            # T_i |psi_{<i}>
+            deriv_vec = get_grad_action(
+                ket_vec,
+                i,
+                self.ci_info,
+                self.ups_layout,
+            )
+            # U_N ... U_{i+1} U_i T_i |psi_{<i}>
+            for j in range(i, n_params):
+                deriv_vec = propagate_unitary(
+                    deriv_vec,
+                    j,
+                    self.ci_info,
+                    thetas,
+                    self.ups_layout,
+                )
+            derivatives[:, i] = deriv_vec
+            ket_vec = propagate_unitary(
+                ket_vec,
+                i,
+                self.ci_info,
+                thetas,
+                self.ups_layout,
+            )
+        return derivatives
+
+    def get_qfim(self, as_metric: bool = False) -> np.ndarray:
+        r"""Calculate the quantum Fisher information matrix of the UPS state at the current parameters.
+
+        .. math::
+            F_{ij} = 4\,\mathrm{Re}\left[\left<\partial_i\psi\middle|\partial_j\psi\right>
+            - \left<\partial_i\psi\middle|\psi\right>\left<\psi\middle|\partial_j\psi\right>\right]
+
+        The QFIM is four times the Fubini-Study metric tensor :math:`g`, and
+        :math:`\left|\left<\psi(\theta)\middle|\psi(\theta+\delta\theta)\right>\right|^2
+        \simeq 1 - \frac{1}{4}\delta\theta^T F \delta\theta`.
+        For the real CI vectors used here :math:`\left<\psi\middle|\partial_i\psi\right>=0`,
+        the subtraction is kept to guard against loss of normalisation.
+        The rank of F is the number of locally independent directions in state space,
+        bounded by min(N_params, N_det - 1) for a real state.
+        A quantum natural gradient step is :math:`\delta\theta = -\eta\, g^{+}\nabla E = -4\eta\, F^{+}\nabla E`.
+
+        #. 10.22331/q-2020-05-25-269, Eq. 8 (quantum natural gradient)
+        #. 10.1103/PRXQuantum.2.040309 (effective quantum dimension)
+
+        Args:
+            as_metric: Return the Fubini-Study metric g = F/4 instead of the QFIM.
+
+        Returns:
+            Quantum Fisher information matrix (N_params x N_params).
+        """
+        derivatives = self._calc_state_derivatives()
+        overlap_with_state = np.matmul(derivatives.T, self.ci_coeffs)
+        metric = np.matmul(derivatives.T, derivatives) - np.outer(overlap_with_state, overlap_with_state)
+        metric = (metric + metric.T) / 2
+        if as_metric:
+            return metric
+        return 4 * metric
+
+    def _calc_qfim_optimization(
+        self, parameters: list[float], theta_optimization: bool, kappa_optimization: bool
+    ) -> np.ndarray:
+        """Calculate the quantum Fisher information matrix with respect to UPS parameters.
+
+        Same calling convention as the gradient and Hessian, for use in natural gradient optimizers.
+        No energy evaluations are counted, as no measurement scheme for the QFIM is implemented.
+
+        Args:
+            parameters: Ansatz and orbital rotation parameters.
+            theta_optimization: If used in theta optimization.
+            kappa_optimization: If used in kappa optimization.
+
+        Returns:
+            Quantum Fisher information matrix.
+        """
+        if kappa_optimization:
+            raise NotImplementedError("QFIM for orbital-rotation parameters is not implemented.")
+        if not theta_optimization:
+            return np.zeros((len(parameters), len(parameters)))
+        self.thetas = parameters
+        return self.get_qfim()
+
     def _calc_energy_rotosolve_optimization(
         self,
         parameters: list[float],
